@@ -1,5 +1,5 @@
 # Launch the sidebar once on login.
-exec-once = /home/small_ed/Projects/local-llm-tooling-showcase/desktop/hypr-sidebar/launch.sh
+exec-once = /path/to/local-llm-tooling-showcase/examples/integrations/hyprland/launch.sh
 
 # Toggle the left special-workspace sidebar with the same keybind for open/close.
 bind = SUPER, A, exec, ags request toggle-sidebar -i tooling-showcase-sidebar
@@ -12,4 +12,4 @@ bind = SUPER, bracketleft, exec, ags request opacity-down -i tooling-showcase-si
 bind = SUPER, bracketright, exec, ags request opacity-up -i tooling-showcase-sidebar
 
 # Optional: restart the sidebar quickly while iterating.
-bind = SUPER SHIFT, A, exec, pkill -f "ags run --gtk 4 /home/small_ed/Projects/local-llm-tooling-showcase/desktop/hypr-sidebar/ags/app.ts"; /home/small_ed/Projects/local-llm-tooling-showcase/desktop/hypr-sidebar/launch.sh
+bind = SUPER SHIFT, A, exec, pkill -f "tooling-showcase-sidebar"; /path/to/local-llm-tooling-showcase/examples/integrations/hyprland/launch.sh

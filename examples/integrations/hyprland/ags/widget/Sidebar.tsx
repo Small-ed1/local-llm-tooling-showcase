@@ -4,8 +4,8 @@ import { execAsync } from "ags/process"
 import Cairo from "cairo"
 import GLib from "gi://GLib"
 
-const ROOT = GLib.getenv("TOOLING_SHOWCASE_ROOT") || "/home/small_ed/Projects/local-llm-tooling-showcase"
-const BACKEND = `PYTHONPATH=${ROOT}/src python -m tooling_showcase.hypr_sidebar`
+const ROOT = GLib.getenv("TOOLING_SHOWCASE_ROOT") || GLib.get_current_dir()
+const BACKEND = `PYTHONPATH="${ROOT}/src" python -m tooling_showcase.hypr_sidebar`
 const SETTINGS_DIR = `${GLib.get_home_dir()}/.config/tooling-showcase-hypr-sidebar`
 const SETTINGS_PATH = `${SETTINGS_DIR}/settings.json`
 

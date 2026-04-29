@@ -416,7 +416,7 @@ TOOL_DOCS: tuple[ToolDoc, ...] = (
         "parse_pdf",
         "extract pdf text",
         "path",
-        "parse_pdf(path='sample.pdf')",
+        "parse_pdf(path='examples/assets/sample.pdf')",
         ("parse pdf", "pdf text"),
     ),
     ToolDoc(
@@ -794,7 +794,7 @@ TOOL_DOCS: tuple[ToolDoc, ...] = (
         "transcribe_audio",
         "offline speech to text",
         "path",
-        "transcribe_audio(path='speech.wav')",
+        "transcribe_audio(path='examples/assets/speech.wav')",
         ("transcribe audio", "speech to text"),
     ),
     ToolDoc(
@@ -803,7 +803,7 @@ TOOL_DOCS: tuple[ToolDoc, ...] = (
         "text_to_speech",
         "synthesize speech",
         "text, destination optional",
-        "text_to_speech(text='hello', destination='speech.wav')",
+        "text_to_speech(text='hello', destination='examples/assets/speech-output.wav')",
         ("text to speech", "tts"),
     ),
     ToolDoc(

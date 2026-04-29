@@ -22,7 +22,7 @@ Note: AGS was not installed on this machine when this was scaffolded, so the Pyt
 
 ## Files
 
-- `ags/app.js`: AGS window and UI
+- `ags/app.ts`: AGS window and UI
 - `ags/style.css`: AGS styling
 - `launch.sh`: launcher that sets `PYTHONPATH`
 - `hyprland.conf.example`: Hyprland snippet
@@ -55,7 +55,7 @@ SUPER + A
 With AGS v3, the relevant commands are:
 
 ```bash
-ags run --gtk 4 /home/small_ed/Projects/local-llm-tooling-showcase/desktop/hypr-sidebar/ags/app.ts
+examples/integrations/hyprland/launch.sh
 ags request toggle-sidebar -i tooling-showcase-sidebar
 ags request toggle-lock -i tooling-showcase-sidebar
 ags request opacity-up -i tooling-showcase-sidebar

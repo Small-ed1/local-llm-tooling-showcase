@@ -4,8 +4,6 @@
 
 This is a showcase and starter skeleton, not a hosted SaaS product. It is designed to run on your machine, inspect your workspace, and keep risky local actions behind explicit boundaries.
 
-![UI preview](docs/screenshots/ui-overview.svg)
-
 ## Highlights
 
 - Chat-first web UI with local sessions, message variants, retries, source views, profile settings, and runtime status.
@@ -19,6 +17,8 @@ This is a showcase and starter skeleton, not a hosted SaaS product. It is design
 ## Quick Start
 
 ```bash
+git clone https://github.com/Small-ed1/local-llm-tooling-showcase.git
+cd local-llm-tooling-showcase
 python -m venv .venv
 . .venv/bin/activate
 pip install -e .
@@ -129,7 +129,9 @@ src/tooling_showcase/
   ollama_wrapper.py  Ollama-compatible API facade
   static/            browser UI
 tests/               regression tests
-desktop/             Hypr sidebar experiment
+examples/assets/     small demo inputs for optional tools
+examples/integrations/hyprland/
+                     optional Hyprland sidebar integration
 ```
 
 ## Release Status
