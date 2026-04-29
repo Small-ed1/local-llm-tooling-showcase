@@ -112,6 +112,8 @@ def test_runtime_exposes_requested_tool_surface(tmp_path: Path):
         "generate_uuid",
         "hash_file",
         "encode_decode",
+        "create_memory",
+        "edit_memory",
         "run_model",
         "transcribe_audio",
         "text_to_speech",
@@ -190,8 +192,10 @@ def test_search_index_memory_task_and_observability_tools(tmp_path: Path):
     assert runtime.delete_from_index("notes.txt").ok is True
 
     assert runtime.save_memory("favorite", {"tool": "grep_search"}).ok is True
+    assert runtime.create_memory("tone", "direct").ok is True
     assert runtime.load_memory("favorite").ok is True
     assert runtime.update_memory("favorite", {"tool": "query_index"}).ok is True
+    assert runtime.edit_memory("tone", "detailed").ok is True
     memories = runtime.list_memories()
     assert memories.ok is True
     assert "favorite" in memories.summary
@@ -223,6 +227,7 @@ def test_search_index_memory_task_and_observability_tools(tmp_path: Path):
     assert runtime.log_sensitive_action("git_reset", {"target": "HEAD~1"}).ok is True
     assert runtime.sandbox_shell_execution("rm tmp.txt", confirm=False).ok is False
     assert runtime.delete_memory("favorite").ok is True
+    assert runtime.delete_memory("tone").ok is True
     assert runtime.plan_task("empty", []).ok is False
 
     empty_root = tmp_path / "other"

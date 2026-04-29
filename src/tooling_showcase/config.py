@@ -57,6 +57,7 @@ class ShowcaseConfig:
     journal_path: Path
     ollama: OllamaConfig
     shell_policy: ShellPolicy
+    benchmark_path: Path | None = None
 
 
 def load_config(project_root: Path | None = None) -> ShowcaseConfig:
@@ -69,6 +70,12 @@ def load_config(project_root: Path | None = None) -> ShowcaseConfig:
         os.getenv(
             "TOOLING_SHOWCASE_JOURNAL",
             str(root / "state" / "events.jsonl"),
+        )
+    ).resolve()
+    benchmark_path = Path(
+        os.getenv(
+            "TOOLING_SHOWCASE_BENCHMARKS",
+            str(root / "state" / "model_benchmarks.json"),
         )
     ).resolve()
     ollama = OllamaConfig(
@@ -87,6 +94,7 @@ def load_config(project_root: Path | None = None) -> ShowcaseConfig:
         journal_path=journal_path,
         ollama=ollama,
         shell_policy=ShellPolicy(),
+        benchmark_path=benchmark_path,
     )
 
 

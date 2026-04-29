@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from tooling_showcase.config import OllamaConfig, ShellPolicy, ShowcaseConfig
+from tooling_showcase.benchmarking import save_benchmark_results
 from tooling_showcase.models import ActionResult, ToolCall
 from tooling_showcase.service import ShowcaseService
 
@@ -18,6 +19,7 @@ def make_config(tmp_path: Path) -> ShowcaseConfig:
         journal_path=state / "events.jsonl",
         ollama=OllamaConfig(enabled=False),
         shell_policy=ShellPolicy(),
+        benchmark_path=state / "model_benchmarks.json",
     )
 
 
@@ -33,6 +35,7 @@ def make_runtime(tmp_path: Path):
         journal_path=tmp_path / "state" / "events.jsonl",
         ollama=OllamaConfig(enabled=False, model="qwen3:8b"),
         shell_policy=ShellPolicy(timeout_seconds=10),
+        benchmark_path=tmp_path / "state" / "model_benchmarks.json",
     )
     return ToolRuntime(config)
 
@@ -138,6 +141,41 @@ def test_service_returns_model_answer_when_no_tool_is_needed(tmp_path: Path):
     assert result.ok is True
     assert result.message == "No tool needed."
     assert result.tool_calls == []
+
+
+def test_service_uses_benchmark_profile_for_auto_route(tmp_path: Path):
+    config = make_config(tmp_path)
+    config.ollama.enabled = True
+    save_benchmark_results(
+        config.benchmark_path,
+        {
+            "suite_version": "test",
+            "models": {"bench-general:latest": {}},
+            "profiles": {
+                "general": {
+                    "model": "bench-general:latest",
+                    "category": "general",
+                    "job": "default everyday assistant",
+                    "summary": "benchmark selected",
+                    "chat_capable": True,
+                    "benchmark_score": 88,
+                }
+            },
+            "last_inventory": ["bench-general:latest"],
+        },
+    )
+    service = ShowcaseService(config)
+    seen = {}
+
+    def mock_ask(prompt, system_prompt=None, response_format=None, model=None, **kwargs):
+        seen["model"] = model
+        return ActionResult(True, "Benchmark route used.")
+
+    service.ollama.ask = mock_ask
+    result = service.handle("Say hello")
+    assert result.ok is True
+    assert seen["model"] == "bench-general:latest"
+    assert result.data["model_route"]["benchmark_profile"] is True
 
 
 def test_service_passes_model_override_to_ollama(tmp_path: Path):
@@ -348,6 +386,36 @@ def test_service_does_not_repeat_identical_tool_call(tmp_path: Path):
     assert result.ok is True
     read_calls = [call for call in result.tool_calls if call.tool_name == "read_file"]
     assert len(read_calls) == 1
+
+
+def test_service_allows_model_memory_tools(tmp_path: Path):
+    config = make_config(tmp_path)
+    config.ollama.enabled = True
+    service = ShowcaseService(config)
+    responses = iter(
+        [
+            ActionResult(
+                True,
+                '{"action":"tool_call","tool_name":"create_memory","arguments":{"key":"style","value":"prefers direct answers"}}',
+            ),
+            ActionResult(
+                True,
+                '{"action":"answer","answer":"I will remember that. <END_OF_MESSAGE>"}',
+            ),
+        ]
+    )
+
+    def mock_ask(prompt, system_prompt=None, response_format=None, model=None, **kwargs):
+        return next(responses)
+
+    service.ollama.ask = mock_ask
+    result = service.handle("Remember that I prefer direct answers")
+    assert result.ok is True
+    assert result.tool_calls[0].tool_name == "create_memory"
+    assert result.tool_calls[0].ok is True
+    loaded = service.tools.load_memory("style")
+    assert loaded.ok is True
+    assert "direct" in loaded.summary
 
 
 def test_service_rejects_model_requested_tool_hidden_from_planner(tmp_path: Path):

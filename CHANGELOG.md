@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+## v0.1.0-alpha.3 - 2026-04-29
+
+### Added
+
+- Interactive `install.sh` setup flow with optional editable install, tests, frontend syntax checks, and benchmark prompts.
+- Local Ollama benchmark suite with category scoring for context use, summarization, coding, debugging, reasoning, Linux triage, structured output, safety, planning, writing, extraction, roleplay, and retrieval.
+- Benchmark-derived model profiles that stay hidden until local benchmark results exist.
+- Planner-visible memory create/edit/delete/list/load support for explicit user memory requests.
+- Help page covering Ollama, interface, sessions, tools, adapters, journal, settings, install, and benchmarking issues.
+- Desktop and mobile screenshot assets for README and release pages.
+
+### Changed
+
+- Auto-routing uses benchmark-derived profiles when available.
+- Mobile chat layout is narrower and more defensive against horizontal overflow.
+- Sidebar now includes clearer branding, labeled quick actions, and recent session history.
+- Response source drawers hotlink web source titles and URLs.
+- Settings button now toggles the settings modal instead of acting only as an opener.
+- Mobile sidebar trigger is a centered edge arrow instead of a top-left text button.
+
+## v0.1.0-alpha.2 - 2026-04-29
+
+### Changed
+
+- Cleaned the release tree by removing temporary local artifacts and duplicate UI bundles.
+- Moved optional sample assets and the Hyprland integration under `examples/`.
+- Added release hygiene metadata, security notes, and path-relative startup scripts.
+
 ## v0.1.0-alpha.1 - 2026-04-29
 
 ### Added

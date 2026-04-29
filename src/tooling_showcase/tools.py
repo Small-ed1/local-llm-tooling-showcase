@@ -155,6 +155,7 @@ class ToolRuntime:
             "control_device",
             "convert_units",
             "copy_file",
+            "create_memory",
             "create_file",
             "datetime_now",
             "delete_file",
@@ -162,6 +163,7 @@ class ToolRuntime:
             "delete_memory",
             "draft_system_prompt",
             "download_file",
+            "edit_memory",
             "encode_decode",
             "env_vars",
             "execute_script",
@@ -782,6 +784,12 @@ class ToolRuntime:
         self._save_json(self.memory_path, memories)
         return ToolCall("save_memory", True, f"Saved memory: {key}", {"key": key})
 
+    def create_memory(self, key: str, value) -> ToolCall:
+        memories = self._load_json(self.memory_path, {})
+        memories[key] = value
+        self._save_json(self.memory_path, memories)
+        return ToolCall("create_memory", True, f"Created memory: {key}", {"key": key})
+
     def load_memory(self, key: str) -> ToolCall:
         memories = self._load_json(self.memory_path, {})
         if key not in memories:
@@ -790,6 +798,12 @@ class ToolRuntime:
 
     def update_memory(self, key: str, value) -> ToolCall:
         return self.save_memory(key, value)
+
+    def edit_memory(self, key: str, value) -> ToolCall:
+        memories = self._load_json(self.memory_path, {})
+        memories[key] = value
+        self._save_json(self.memory_path, memories)
+        return ToolCall("edit_memory", True, f"Edited memory: {key}", {"key": key})
 
     def delete_memory(self, key: str) -> ToolCall:
         memories = self._load_json(self.memory_path, {})

@@ -165,6 +165,85 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "safe_auto_run": True,
     },
+    "create_memory": {
+        "description": "Create a durable user memory when the user explicitly asks you to remember a stable preference, fact, or personal detail. Do not store secrets, credentials, or sensitive data.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Short stable memory key."},
+                "value": {"description": "Memory value. Use a short string or compact JSON-compatible object."},
+            },
+            "required": ["key", "value"],
+        },
+        "safe_auto_run": True,
+    },
+    "save_memory": {
+        "description": "Save a durable user memory by key. Use for explicit remember/store requests and prefer stable preferences over transient chat details.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Short stable memory key."},
+                "value": {"description": "Memory value. Use a short string or compact JSON-compatible object."},
+            },
+            "required": ["key", "value"],
+        },
+        "safe_auto_run": True,
+    },
+    "load_memory": {
+        "description": "Load one stored user memory by key when a previous preference or personal detail is needed.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Memory key to load."},
+            },
+            "required": ["key"],
+        },
+        "safe_auto_run": True,
+    },
+    "edit_memory": {
+        "description": "Edit an existing user memory when the user asks to change or correct a remembered preference or fact.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Memory key to edit."},
+                "value": {"description": "Replacement memory value."},
+            },
+            "required": ["key", "value"],
+        },
+        "safe_auto_run": True,
+    },
+    "update_memory": {
+        "description": "Update an existing user memory by key. Equivalent to editing the remembered value.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Memory key to update."},
+                "value": {"description": "Replacement memory value."},
+            },
+            "required": ["key", "value"],
+        },
+        "safe_auto_run": True,
+    },
+    "delete_memory": {
+        "description": "Delete a stored user memory when the user asks you to forget a preference, fact, or personal detail.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "description": "Memory key to delete."},
+            },
+            "required": ["key"],
+        },
+        "safe_auto_run": True,
+    },
+    "list_memories": {
+        "description": "List stored user memories so you can find the right key before loading, editing, or deleting.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+        "safe_auto_run": True,
+    },
     "shell_command": {
         "description": "Run a guarded shell command in the workspace. Use only when the user explicitly asks to run a command or inspect local runtime state. Risky commands require confirmation.",
         "parameters": {
@@ -208,6 +287,13 @@ def normalize_tool_arguments(tool_name: str, arguments: dict[str, Any] | None) -
         args["path_text"] = args.pop("path")
     if tool_name == "shell_command" and "cmd" in args and "command" not in args:
         args["command"] = args.pop("cmd")
+    if tool_name in {"create_memory", "save_memory", "edit_memory", "update_memory"}:
+        if "name" in args and "key" not in args:
+            args["key"] = args.pop("name")
+        if "text" in args and "value" not in args:
+            args["value"] = args.pop("text")
+        if "content" in args and "value" not in args:
+            args["value"] = args.pop("content")
     return args
 
 

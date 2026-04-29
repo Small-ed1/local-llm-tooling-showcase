@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from tooling_showcase.benchmarking import benchmark_command
 from tooling_showcase.config import load_config
 from tooling_showcase.ollama_wrapper import run_ollama_wrapper
 from tooling_showcase.service import ShowcaseService
@@ -25,6 +26,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("adapters", help="Show detected workspace adapters")
     sub.add_parser("models", help="Show installed-model jobs and routing categories")
+
+    benchmark = sub.add_parser("benchmark", help="Benchmark local Ollama models and derive routing profiles")
+    benchmark.add_argument("--model", action="append", default=[], help="Model to benchmark. Can be repeated.")
+    benchmark.add_argument("--all", action="store_true", help="Re-run every selected/installed model instead of only new models.")
+    benchmark.add_argument("--limit-tasks", type=int, default=None, help="Limit task count for a smoke run.")
+    benchmark.add_argument("--list-models", action="store_true", help="Print installed and unbenchmarked model inventory.")
+    benchmark.add_argument("--shell-summary", action="store_true", help="Print shell-friendly inventory variables for install.sh.")
 
     tui = sub.add_parser("tui", help="Run the terminal UI")
     tui.add_argument("--workspace", default=None)
@@ -86,6 +94,9 @@ def main() -> int:
         for card in service.model_cards():
             print(json.dumps(card, indent=2, sort_keys=True))
         return 0
+
+    if args.command == "benchmark":
+        return benchmark_command(config, args)
 
     if args.command == "tui":
         return run_tui(service)

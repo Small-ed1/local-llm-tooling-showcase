@@ -13,10 +13,10 @@
       <div class="mobile-drawer-head glass"><strong>Navigation</strong><button class="ghost-button icon-button" data-mobile-close aria-label="Close navigation drawer">×</button></div>
       <section class="sidebar-identity glass clickable-card" id="brandCard" tabindex="0">
         <div class="identity-top-row">
-          <div class="brand-mark">LS</div>
+          <div class="brand-mark" aria-hidden="true">LLM</div>
           <div class="brand-copy">
-            <h1>Local Showcase</h1>
-            <p>Chat-first local tooling</p>
+            <h1>Local LLM Tooling Showcase</h1>
+            <p>Chat-first local tooling cockpit</p>
           </div>
           <button id="sidebarCollapseBtn" class="ghost-button icon-button sidebar-collapse-button" title="Collapse sidebar" aria-label="Collapse sidebar">=</button>
         </div>
@@ -26,10 +26,14 @@
           <p id="pageSummary" class="page-summary">Ask questions, inspect files, and let tools run in the background.</p>
         </div>
         <div class="sidebar-quick-actions" aria-label="Chat shortcuts">
-          <button id="sidebarNewChatBtn" class="ghost-button icon-button" title="New chat">N</button>
-          <button id="sidebarSearchBtn" class="ghost-button icon-button" title="Search chats">S</button>
-          <button id="recentsToggleBtn" class="ghost-button icon-button" title="Recent chats">R</button>
+          <button id="sidebarNewChatBtn" class="ghost-button quick-label-button" title="New chat">New</button>
+          <button id="sidebarSearchBtn" class="ghost-button quick-label-button" title="Search chats">Search</button>
+          <button id="recentsToggleBtn" class="ghost-button quick-label-button" title="Recent chats">History</button>
         </div>
+        <section class="sidebar-history" aria-label="Recent session history">
+          <div class="sidebar-history-head"><span>Recent sessions</span><small>local</small></div>
+          <div id="sidebarSessionHistory" class="sidebar-session-history"></div>
+        </section>
         <div id="recentSessionsPullout" class="recent-sessions-pullout" hidden></div>
       </section>
 
@@ -45,12 +49,13 @@
           <button class="page-nav-button" data-page-target="journal"><span>Journal</span><small>events and traces</small></button>
           <div class="nav-group-label">Runtime</div>
           <button class="page-nav-button" data-page-target="overview"><span>Overview</span><small>full status</small></button>
+          <button class="page-nav-button" data-page-target="help"><span>Help</span><small>setup and issues</small></button>
         </nav>
       </details>
     </aside>
 
     <main class="chat-column page-shell" aria-label="Feature workspace">
-      <button id="sidebarToggleBtn" class="floating-menu-button" aria-label="Open sidebar">M</button>
+      <button id="sidebarToggleBtn" class="floating-menu-button" aria-label="Open sidebar"><span aria-hidden="true">&rsaquo;</span></button>
 
       <div class="page-stack">
         <section class="feature-page chat-page active" data-page="chat" aria-label="Chat page">
@@ -231,6 +236,64 @@
               <span class="status-pill muted">events</span>
             </div>
             <div id="journalList" class="journal-list"></div>
+          </section>
+        </section>
+
+        <section class="feature-page help-page" data-page="help" aria-label="Help page">
+          <section class="page-intro glass">
+            <div>
+              <p class="eyebrow">Help</p>
+              <h3>Setup, troubleshooting, and page guide</h3>
+              <p>Use this when Ollama, the interface, tools, model routing, sessions, or local state behave unexpectedly.</p>
+            </div>
+          </section>
+          <section class="panel glass help-panel clickable-panel" id="helpPanel" tabindex="0">
+            <div class="help-grid">
+              <details class="help-card" open>
+                <summary>Ollama and models</summary>
+                <p>Use `ollama list` to confirm models are installed and `ollama serve` or your system service to expose `127.0.0.1:11434`.</p>
+                <p>If the model picker is empty, verify `/api/tags` is reachable and check the runtime strip. Benchmarked profile suggestions appear only after `tooling-showcase benchmark` has produced local results.</p>
+                <p>If responses are slow, benchmark models, lower context tokens in Settings, or select a smaller installed model.</p>
+              </details>
+              <details class="help-card">
+                <summary>Chat page</summary>
+                <p>Use natural language first. The planner can call safe tools when a request needs files, search, retrieval, memories, or current information.</p>
+                <p>Use retry variants when an answer needs more detail, a shorter version, debugging, or a different model.</p>
+                <p>On mobile, open the sidebar with the floating menu button and keep long code blocks horizontally scrollable.</p>
+              </details>
+              <details class="help-card">
+                <summary>Sessions and memories</summary>
+                <p>Sessions and UI memories live in browser storage. Backend memories created by model tools live under the local `state/` directory.</p>
+                <p>Use memories only for stable preferences and facts. Do not store secrets, credentials, or one-off prompt content.</p>
+                <p>If history looks wrong, use the Sessions page search, export all sessions, or clear browser UI state from Settings.</p>
+              </details>
+              <details class="help-card">
+                <summary>Tools and confirmations</summary>
+                <p>Read/search/index tools are safe for automatic planner use. Shell execution stays confirmation-gated and destructive patterns are blocked.</p>
+                <p>If a tool is rejected, it is either hidden from the planner, unavailable in the runtime, or requires confirmation.</p>
+                <p>Use the Manual Tool Console to test exact tool arguments before expecting the model planner to call them.</p>
+              </details>
+              <details class="help-card">
+                <summary>Adapters and workspace</summary>
+                <p>Adapters inspect nearby projects configured by `TOOLING_SHOWCASE_PORTFOLIO`. If none appear, check the environment variable and project locations.</p>
+                <p>Use tree view and file search before reading files when paths are uncertain.</p>
+              </details>
+              <details class="help-card">
+                <summary>Journal and debugging</summary>
+                <p>The journal records routes, tool calls, model fallback behavior, and failures. Use it to verify whether a tool actually ran.</p>
+                <p>If UI state and backend state disagree, refresh runtime data, reload the page, and inspect `state/events.jsonl`.</p>
+              </details>
+              <details class="help-card">
+                <summary>Settings and profiles</summary>
+                <p>System prompts, profile fields, theme settings, and model options are browser-local. Export important sessions before clearing browser data.</p>
+                <p>Model options are sent to Ollama per request. Unsupported options may be ignored by a model or endpoint.</p>
+              </details>
+              <details class="help-card">
+                <summary>Install and benchmark flow</summary>
+                <p>Run `./install.sh` for guided setup. It can create a virtualenv, install the package, run tests, and offer benchmarking when several local models exist.</p>
+                <p>After installing new Ollama models, run `./install.sh` again or `tooling-showcase benchmark`; only unbenchmarked models are tested unless `--all` is used.</p>
+              </details>
+            </div>
           </section>
         </section>
       </div>

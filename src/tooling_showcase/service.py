@@ -8,6 +8,7 @@ from typing import Any
 
 from tooling_showcase.config import ShowcaseConfig
 from tooling_showcase.journal import EventJournal
+from tooling_showcase.benchmarking import benchmark_profiles, default_benchmark_path, load_benchmark_results
 from tooling_showcase.model_routing import route_model
 from tooling_showcase.models import ActionResult, ToolCall
 from tooling_showcase.ollama import OllamaClient
@@ -58,7 +59,11 @@ class ShowcaseService:
             return ActionResult(False, "Empty message.")
 
         model_route = route_model(text)
-        selected_model = self._normalize_model_choice(model) or model_route.profile.model
+        model_route_data = model_route.as_dict()
+        requested_model = self._normalize_model_choice(model)
+        if requested_model is None:
+            model_route_data = self._route_with_benchmark_profile(model_route_data)
+        selected_model = requested_model or str(model_route_data.get("model") or model_route.profile.model)
         selected_options = self._merge_options(options or ollama_options)
         enable_thinking, clean_options = self._extract_think(selected_options)
         selected_options = clean_options
@@ -74,7 +79,7 @@ class ShowcaseService:
                 text,
                 confirm=confirm,
                 model=selected_model,
-                model_route=model_route.as_dict(),
+                model_route=model_route_data,
                 available_tools=available_tools,
             )
             if direct is not None:
@@ -82,7 +87,7 @@ class ShowcaseService:
                     text=text,
                     result=direct,
                     model=selected_model,
-                    model_route=model_route.as_dict(),
+                    model_route=model_route_data,
                     tool_calls=direct.tool_calls,
                     mode="deterministic_tool_route",
                 )
@@ -95,7 +100,7 @@ class ShowcaseService:
                     text=text,
                     result=legacy,
                     model=selected_model,
-                    model_route=model_route.as_dict(),
+                    model_route=model_route_data,
                     tool_calls=legacy.tool_calls,
                     mode="legacy_direct_tool_fallback_no_ollama",
                 )
@@ -104,7 +109,7 @@ class ShowcaseService:
             result = ActionResult(False, "Local Ollama fallback is disabled.")
             result.data = {
                 "model": selected_model,
-                "model_route": model_route.as_dict(),
+                "model_route": model_route_data,
             }
             self.journal.append(
                 {
@@ -123,14 +128,14 @@ class ShowcaseService:
                 system_prompt=system_prompt,
                 options=selected_options,
                 response_format=response_format,
-                model_route=model_route.as_dict(),
+                model_route=model_route_data,
                 think=enable_thinking,
             )
             self._log_chat(
                 text=text,
                 result=result,
                 model=selected_model,
-                model_route=model_route.as_dict(),
+                model_route=model_route_data,
                 tool_calls=[],
                 mode="chat_no_tools",
             )
@@ -145,7 +150,7 @@ class ShowcaseService:
                 system_prompt=system_prompt,
                 options=selected_options,
                 response_format=response_format,
-                model_route=model_route.as_dict(),
+                model_route=model_route_data,
                 show_tool_traces=show_tool_traces,
                 think=enable_thinking,
             )
@@ -154,7 +159,7 @@ class ShowcaseService:
                 text=text,
                 result=result,
                 model=selected_model,
-                model_route=model_route.as_dict(),
+                model_route=model_route_data,
                 tool_calls=contextual_calls,
                 mode="contextual_web_answer",
             )
@@ -167,14 +172,14 @@ class ShowcaseService:
                 system_prompt=system_prompt,
                 options=selected_options,
                 response_format=response_format,
-                model_route=model_route.as_dict(),
+                model_route=model_route_data,
                 think=enable_thinking,
             )
             self._log_chat(
                 text=text,
                 result=result,
                 model=selected_model,
-                model_route=model_route.as_dict(),
+                model_route=model_route_data,
                 tool_calls=[],
                 mode="chat_direct_no_tool_signals",
             )
@@ -204,7 +209,7 @@ class ShowcaseService:
                     f"Tool decision model call failed: {decision_result.message}",
                     data={
                         "model": selected_model,
-                        "model_route": model_route.as_dict(),
+                        "model_route": model_route_data,
                     },
                     tool_calls=tool_calls,
                 )
@@ -212,7 +217,7 @@ class ShowcaseService:
                     text=text,
                     result=result,
                     model=selected_model,
-                    model_route=model_route.as_dict(),
+                    model_route=model_route_data,
                     tool_calls=tool_calls,
                     mode="tool_decision_failed",
                 )
@@ -228,7 +233,7 @@ class ShowcaseService:
                     system_prompt=system_prompt,
                     options=selected_options,
                     response_format=response_format,
-                    model_route=model_route.as_dict(),
+                    model_route=model_route_data,
                     show_tool_traces=show_tool_traces,
                     think=enable_thinking,
                     recovery_note=f"The tool planner returned invalid JSON: {exc}",
@@ -238,7 +243,7 @@ class ShowcaseService:
                     text=text,
                     result=fallback,
                     model=selected_model,
-                    model_route=model_route.as_dict(),
+                    model_route=model_route_data,
                     tool_calls=tool_calls,
                     mode="invalid_tool_json_recovered",
                 )
@@ -262,7 +267,7 @@ class ShowcaseService:
                         answer_text,
                         data={
                             "model": selected_model,
-                            "model_route": model_route.as_dict(),
+                            "model_route": model_route_data,
                             "planner": decision,
                         },
                         tool_calls=tool_calls,
@@ -271,7 +276,7 @@ class ShowcaseService:
                         text=text,
                         result=result,
                         model=selected_model,
-                        model_route=model_route.as_dict(),
+                        model_route=model_route_data,
                         tool_calls=tool_calls,
                         mode="model_answered_without_more_tools",
                     )
@@ -341,7 +346,7 @@ class ShowcaseService:
             system_prompt=system_prompt,
             options=selected_options,
             response_format=response_format,
-            model_route=model_route.as_dict(),
+            model_route=model_route_data,
             show_tool_traces=show_tool_traces,
             think=enable_thinking,
         )
@@ -351,7 +356,7 @@ class ShowcaseService:
             text=text,
             result=result,
             model=selected_model,
-            model_route=model_route.as_dict(),
+            model_route=model_route_data,
             tool_calls=tool_calls,
             mode="model_tool_loop",
         )
@@ -362,6 +367,39 @@ class ShowcaseService:
 
     def adapter_cards(self) -> list[dict]:
         return [asdict(card) for card in self.adapters.cards()]
+
+    def model_cards(self) -> list[dict]:
+        benchmark_path = default_benchmark_path(self.config)
+        results = load_benchmark_results(benchmark_path)
+        profiles = benchmark_profiles(benchmark_path)
+        if profiles:
+            return profiles
+        return [
+            {
+                "model": model,
+                "category": "unprofiled",
+                "job": "run tooling-showcase benchmark to assign this model",
+                "summary": "No local benchmark profile has been recorded yet.",
+                "chat_capable": True,
+            }
+            for model in sorted(results.get("models", {}))
+        ]
+
+    def _route_with_benchmark_profile(self, route: dict[str, Any]) -> dict[str, Any]:
+        profiles = benchmark_profiles(default_benchmark_path(self.config))
+        if not profiles:
+            return route
+        category = str(route.get("category") or "general")
+        profile = next((item for item in profiles if item.get("category") == category), None)
+        if profile is None and category == "fast":
+            profile = next((item for item in profiles if item.get("category") == "general"), None)
+        if profile is None:
+            return route
+        updated = dict(route)
+        updated.update(profile)
+        updated["reason"] = f"{route.get('reason', 'Auto-routed request')} Selected from local benchmark profile for {profile.get('category')} work."
+        updated["benchmark_profile"] = True
+        return updated
 
     def run_tool_manual(
         self,
@@ -666,6 +704,13 @@ Do not describe yourself as a package, wrapper, showcase assistant, or local too
             "look up",
             "docs",
             "documentation",
+            "memory",
+            "memories",
+            "remember",
+            "recall",
+            "forget",
+            "save this",
+            "store this",
             "latest",
             "current",
             "today",

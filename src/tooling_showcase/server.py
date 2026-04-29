@@ -12,6 +12,7 @@ import inspect
 import json
 import mimetypes
 
+from tooling_showcase.benchmarking import benchmark_profiles, default_benchmark_path, load_benchmark_results
 from tooling_showcase.models import ActionResult
 from tooling_showcase.service import ShowcaseService
 
@@ -507,17 +508,21 @@ def _call_service_handle(
 def _load_ollama_models(service: ShowcaseService) -> dict:
     tags_url = _ollama_tags_url(service.config.ollama.endpoint)
     request = Request(tags_url, method="GET")
+    benchmark_path = default_benchmark_path(service.config)
+    benchmark_results = load_benchmark_results(benchmark_path)
+    benchmark_models = benchmark_results.get("models", {}) if isinstance(benchmark_results.get("models"), dict) else {}
+    profiles = benchmark_profiles(benchmark_path)
 
     try:
         with urlopen(request, timeout=10) as response:
             raw = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        return {"ok": False, "models": [], "error": f"Ollama HTTP {exc.code}: {body}", "endpoint": tags_url}
+        return {"ok": False, "models": [], "profiles": profiles, "benchmarks": benchmark_results, "error": f"Ollama HTTP {exc.code}: {body}", "endpoint": tags_url}
     except URLError as exc:
-        return {"ok": False, "models": [], "error": f"Failed to reach Ollama: {exc}", "endpoint": tags_url}
+        return {"ok": False, "models": [], "profiles": profiles, "benchmarks": benchmark_results, "error": f"Failed to reach Ollama: {exc}", "endpoint": tags_url}
     except json.JSONDecodeError as exc:
-        return {"ok": False, "models": [], "error": f"Invalid Ollama model JSON: {exc}", "endpoint": tags_url}
+        return {"ok": False, "models": [], "profiles": profiles, "benchmarks": benchmark_results, "error": f"Invalid Ollama model JSON: {exc}", "endpoint": tags_url}
 
     models = []
     for item in raw.get("models", []):
@@ -533,11 +538,12 @@ def _load_ollama_models(service: ShowcaseService) -> dict:
                 "size": item.get("size"),
                 "digest": item.get("digest"),
                 "details": item.get("details") or {},
+                "benchmark": benchmark_models.get(name),
             }
         )
 
     models.sort(key=lambda item: item["name"].lower())
-    return {"ok": True, "models": models, "endpoint": tags_url}
+    return {"ok": True, "models": models, "profiles": profiles, "benchmarks": benchmark_results, "endpoint": tags_url}
 
 
 def _ollama_tags_url(endpoint: str) -> str:

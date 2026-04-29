@@ -1,21 +1,11 @@
-const MODEL_PROFILES = [
-  { model: "qwen3:8b", category: "general", job: "default everyday assistant", summary: "Best overall balance for normal daily requests.", chat_capable: true },
-  { model: "qwen3.5:9b", category: "coding", job: "coding and technical implementation", summary: "Best coding model left in the local set.", chat_capable: true },
-  { model: "mistral-nemo:12b", category: "linux", job: "linux troubleshooting and sysadmin help", summary: "Strong Linux and debugging profile with good speed.", chat_capable: true },
-  { model: "qwen2.5:14b-instruct", category: "reasoning", job: "deep research, document-heavy analysis, and serious assistant work", summary: "Strong reasoning, long-context, and summary performance.", chat_capable: true },
-  { model: "llama3.2:latest", category: "fast", job: "fast general responses", summary: "Fastest useful model left for quick replies.", chat_capable: true },
-  { model: "dolphin3:latest", category: "summary", job: "quick summaries and casual chat", summary: "Best summary-focused fast model, with weaker reasoning control.", chat_capable: true },
-  { model: "phi4:14b", category: "roleplay", job: "companion-style and personality-heavy conversations", summary: "Strongest tone, personality, and companion-style responses.", chat_capable: true },
-  { model: "qwen2.5vl:7b", category: "vision", job: "image and mixed vision-text workflows", summary: "Use when screenshots, photos, or visual analysis matter.", chat_capable: true },
-  { model: "nomic-embed-text:latest", category: "embedding", job: "primary embedding generation for retrieval and RAG", summary: "Embedding-only model, not for chat responses.", chat_capable: false },
-  { model: "embeddinggemma:latest", category: "embedding", job: "secondary embedding generation for retrieval experiments", summary: "Embedding-only model, not for chat responses.", chat_capable: false }
-];
-
 const TOOL_EXAMPLES = {
   adapter_inventory: {},
   build_index: {},
   content_search: { query: "ToolRuntime" },
+  create_memory: { key: "style", value: "prefers concise answers" },
+  delete_memory: { key: "style" },
   draft_system_prompt: { title: "Coding assistant", goal: "direct implementation help", context: "" },
+  edit_memory: { key: "style", value: "prefers detailed but direct answers" },
   file_search: { query: "README" },
   library_info: {},
   library_read_epub: { id: "", query: "", max_chars: 12000 },
@@ -23,6 +13,9 @@ const TOOL_EXAMPLES = {
   library_search: { query: "local models", limit: 10 },
   query_index: { query: "routing and tool catalog" },
   read_file: { path: "README.md" },
+  list_memories: {},
+  load_memory: { key: "style" },
+  save_memory: { key: "style", value: "prefers concise answers" },
   shell_command: { command: "git status" },
   tree_view: { path: ".", max_depth: 4 },
   web_search: { query: "Ollama structured outputs" }
@@ -32,7 +25,10 @@ const TOOL_DOCS = {
   adapter_inventory: { name: "Adapter Inventory", safety: "read-only", summary: "Show which workspace adapters are detected and usable.", usage: "Use this when you want provenance, workspace status, or adapter summaries." },
   build_index: { name: "Build Index", safety: "read/write state", summary: "Build the lightweight local index from text files.", usage: "Run after a big repo change or before repeated codebase questions." },
   content_search: { name: "Content Search", safety: "read-only", summary: "Search file contents for a string or symbol.", usage: "Useful for locating functions, prompts, routes, or feature flags." },
+  create_memory: { name: "Create Memory", safety: "local state", summary: "Store a user preference or stable fact by key.", usage: "Use only when the user explicitly asks the assistant to remember something." },
+  delete_memory: { name: "Delete Memory", safety: "local state", summary: "Forget a stored user memory by key.", usage: "Use when the user asks to forget or remove a remembered detail." },
   draft_system_prompt: { name: "Draft System Prompt", safety: "read-only suggestion", summary: "Draft a structured system prompt for user review.", usage: "Use from settings guided creation or when the user asks to create reusable behavior." },
+  edit_memory: { name: "Edit Memory", safety: "local state", summary: "Replace a stored user memory value.", usage: "Use when the user corrects or changes a remembered detail." },
   file_search: { name: "File Search", safety: "read-only", summary: "Find files by filename.", usage: "Use before read_file when you know part of a filename but not the exact path." },
   library_info: { name: "Library Info", safety: "read-only", summary: "Show configured local library sources.", usage: "Use to confirm EPUB/ZIM library availability." },
   library_read_epub: { name: "Read EPUB", safety: "read-only", summary: "Read a selected EPUB item or matching passage.", usage: "Requires a library item id from library_search." },
@@ -40,6 +36,9 @@ const TOOL_DOCS = {
   library_search: { name: "Library Search", safety: "read-only", summary: "Search the local library catalog.", usage: "Use before reading EPUB/ZIM content." },
   query_index: { name: "Query Index", safety: "read-only", summary: "Search the built local index.", usage: "Best for repo-level questions after build_index has run." },
   read_file: { name: "Read File", safety: "read-only", summary: "Read a local text file.", usage: "Use with an exact path from file_search or tree_view." },
+  list_memories: { name: "List Memories", safety: "local state", summary: "Show stored memory keys and values.", usage: "Use before loading, editing, or deleting a memory when the key is unknown." },
+  load_memory: { name: "Load Memory", safety: "local state", summary: "Read one stored memory by key.", usage: "Use when a known preference or personal detail is relevant." },
+  save_memory: { name: "Save Memory", safety: "local state", summary: "Store a user preference or stable fact by key.", usage: "Use only for explicit remember/store requests." },
   shell_command: { name: "Shell Command", safety: "guarded", summary: "Run a shell command with blocked and confirm-required patterns.", usage: "Use only for explicit terminal tasks like git status, tests, or safe inspection." },
   tree_view: { name: "Tree View", safety: "read-only", summary: "Show a shallow project tree.", usage: "Good for quickly understanding project layout." },
   web_search: { name: "Web Search", safety: "network", summary: "Run a simple web lookup.", usage: "Use for docs, current info, or external references." }
@@ -49,7 +48,10 @@ const PLANNER_SAFE_TOOLS = new Set([
   "adapter_inventory",
   "build_index",
   "content_search",
+  "create_memory",
+  "delete_memory",
   "draft_system_prompt",
+  "edit_memory",
   "expand_search_result",
   "file_search",
   "library_info",
@@ -58,6 +60,9 @@ const PLANNER_SAFE_TOOLS = new Set([
   "library_search",
   "query_index",
   "read_file",
+  "list_memories",
+  "load_memory",
+  "save_memory",
   "tree_view",
   "web_search"
 ]);
@@ -159,6 +164,11 @@ const PAGE_META = {
     eyebrow: "Observability",
     title: "Journal",
     summary: "Review backend events, tool calls, and autonomous-run traces."
+  },
+  help: {
+    eyebrow: "Help",
+    title: "Help and troubleshooting",
+    summary: "Fix setup, Ollama, interface, tool, and local-state issues."
   }
 };
 
@@ -178,6 +188,8 @@ const state = {
   activeSessionId: null,
   memories: [],
   models: [],
+  benchmarkProfiles: [],
+  benchmarks: { models: {}, profiles: {} },
   tools: [],
   toolCards: [],
   adapters: [],
@@ -362,10 +374,15 @@ function roughTokens(text) {
 }
 
 function routeModelForText(text) {
+  const profiles = activeModelProfiles();
   for (const [category, pattern] of ROUTE_PATTERNS) {
-    if (pattern.test(text)) return MODEL_PROFILES.find((profile) => profile.category === category && profile.chat_capable);
+    if (pattern.test(text)) return profiles.find((profile) => profile.category === category && profile.chat_capable);
   }
-  return MODEL_PROFILES.find((profile) => profile.category === "general");
+  return profiles.find((profile) => profile.category === "general");
+}
+
+function activeModelProfiles() {
+  return Array.isArray(state.benchmarkProfiles) ? state.benchmarkProfiles : [];
 }
 
 function activeSession() {
@@ -775,24 +792,50 @@ function renderSessions() {
 
 function renderRecentSessions() {
   const root = $("recentSessionsPullout");
-  if (!root) return;
+  const sidebarRoot = $("sidebarSessionHistory");
   const recent = [...state.sessions]
     .sort((a, b) => new Date(b.messages?.at(-1)?.createdAt || b.createdAt) - new Date(a.messages?.at(-1)?.createdAt || a.createdAt))
-    .slice(0, 3);
+    .slice(0, 6);
+  renderSidebarSessionHistory(sidebarRoot, recent);
+  if (!root) return;
   if (!recent.length) {
     root.innerHTML = `<div class="recent-empty">No chats yet.</div>`;
     return;
   }
-  root.innerHTML = recent.map((session) => `
+  root.innerHTML = `<div class="recent-pullout-title">Session history</div>` + recent.map((session) => recentSessionButtonHtml(session)).join("");
+  wireSessionHistoryButtons(root);
+}
+
+function renderSidebarSessionHistory(root, recent) {
+  if (!root) return;
+  const visible = recent.slice(0, 4);
+  if (!visible.length) {
+    root.innerHTML = `<div class="recent-empty">No chats yet.</div>`;
+    return;
+  }
+  root.innerHTML = visible.map((session) => recentSessionButtonHtml(session)).join("");
+  wireSessionHistoryButtons(root);
+}
+
+function recentSessionButtonHtml(session) {
+  const lastMessage = [...(session.messages || [])].reverse().find((message) => String(message.content || "").trim());
+  const snippet = String(lastMessage?.content || "New conversation").replace(/\s+/g, " ").trim().slice(0, 72);
+  const updated = session.messages?.at(-1)?.createdAt || session.createdAt;
+  return `
     <button class="recent-session-button ${session.id === state.activeSessionId ? "active" : ""}" data-session-id="${escapeHtml(session.id)}">
       <strong>${escapeHtml(session.title || "New session")}</strong>
-      <span>${session.messages?.length || 0} messages</span>
-    </button>`).join("");
+      <span>${escapeHtml(snippet || `${session.messages?.length || 0} messages`)}</span>
+      <small>${session.messages?.length || 0} messages · ${new Date(updated).toLocaleDateString()}</small>
+    </button>`;
+}
+
+function wireSessionHistoryButtons(root) {
   root.querySelectorAll("[data-session-id]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
       state.activeSessionId = button.dataset.sessionId;
-      root.hidden = true;
+      const pullout = $("recentSessionsPullout");
+      if (pullout) pullout.hidden = true;
       persist();
       renderAll();
       setActivePage("chat");
@@ -1136,12 +1179,7 @@ function openSourcesDetail(message) {
   const tabs = groups.map((group) => `<button class="source-tab ${group.type === first ? "active" : ""}" data-source-tab="${group.type}">${escapeHtml(group.type)} (${group.items.length})</button>`).join("");
   const panels = groups.map((group) => `
     <div class="source-panel ${group.type === first ? "active" : ""}" data-source-panel="${group.type}">
-      ${group.items.map((source, index) => `
-        <section class="source-card">
-          <div><strong>${escapeHtml(source.title || `${group.type} source ${index + 1}`)}</strong><span>${escapeHtml(source.tool)} call ${source.callIndex}</span></div>
-          ${source.url ? `<code>${escapeHtml(source.url)}</code>` : ""}
-          ${source.snippet ? `<pre>${escapeHtml(String(source.snippet).slice(0, 1800))}</pre>` : ""}
-        </section>`).join("")}
+      ${group.items.map((source, index) => renderSourceCard(source, group.type, index)).join("")}
     </div>`).join("");
   openDetailModal({
     eyebrow: "Sources",
@@ -1150,6 +1188,36 @@ function openSourcesDetail(message) {
     payload: sources
   });
   bindSourceTabs();
+}
+
+function renderSourceCard(source, groupType, index) {
+  const title = source.title || `${groupType} source ${index + 1}`;
+  const link = source.type === "web" ? safeHttpUrl(source.url) : "";
+  const titleHtml = link
+    ? `<a class="source-title-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(title)}</strong></a>`
+    : `<strong>${escapeHtml(title)}</strong>`;
+  const urlHtml = source.url
+    ? link
+      ? `<a class="source-url-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer"><code>${escapeHtml(source.url)}</code></a>`
+      : `<code>${escapeHtml(source.url)}</code>`
+    : "";
+  return `
+    <section class="source-card ${link ? "hotlink-source" : ""}">
+      <div>${titleHtml}<span>${escapeHtml(source.tool)} call ${source.callIndex}</span></div>
+      ${urlHtml}
+      ${source.snippet ? `<pre>${escapeHtml(String(source.snippet).slice(0, 1800))}</pre>` : ""}
+    </section>`;
+}
+
+function safeHttpUrl(value) {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : "";
+  } catch {
+    return "";
+  }
 }
 
 function bindSourceTabs() {
@@ -1175,12 +1243,17 @@ async function loadModels() {
     const data = await res.json();
     liveModels = Array.isArray(data.models) ? data.models : [];
     state.models = liveModels;
+    state.benchmarks = data.benchmarks && typeof data.benchmarks === "object" ? data.benchmarks : { models: {}, profiles: {} };
+    state.benchmarkProfiles = Array.isArray(data.profiles) ? data.profiles : [];
     state.modelsOk = Boolean(data.ok);
     $("modelStatus").textContent = data.ok ? `${liveModels.length} local` : "offline";
     $("modelStatus").className = `status-pill ${data.ok ? "ok" : "bad"}`;
     if (!data.ok && data.error) renderModelMeta(`Ollama models could not be loaded: ${data.error}`);
   } catch (error) {
     state.modelsOk = false;
+    state.models = [];
+    state.benchmarks = { models: {}, profiles: {} };
+    state.benchmarkProfiles = [];
     $("modelStatus").textContent = "offline";
     $("modelStatus").className = "status-pill bad";
     renderModelMeta(`Model endpoint unavailable: ${error.message}`);
@@ -1197,19 +1270,25 @@ async function loadModels() {
     select.appendChild(option);
   }
 
-  const group = document.createElement("optgroup");
-  group.label = "Suggested profiles";
-  MODEL_PROFILES.forEach((profile) => {
-    if (seen.has(profile.model)) return;
-    const option = document.createElement("option");
-    option.value = profile.model;
-    option.disabled = !profile.chat_capable;
-    option.textContent = `${profile.model} · ${profile.category}${profile.chat_capable ? "" : " · embedding only"}`;
-    group.appendChild(option);
-  });
-  select.appendChild(group);
+  appendBenchmarkProfileOptions(select, seen, { includeDisabled: true });
   updateModelMeta();
   renderRuntimeStatus();
+}
+
+function appendBenchmarkProfileOptions(select, seen, { includeDisabled = false } = {}) {
+  const profiles = activeModelProfiles().filter((profile) => profile?.model && !seen.has(profile.model));
+  if (!profiles.length) return;
+  const group = document.createElement("optgroup");
+  group.label = "Benchmarked profiles";
+  profiles.forEach((profile) => {
+    const option = document.createElement("option");
+    option.value = profile.model;
+    option.disabled = includeDisabled ? !profile.chat_capable : false;
+    option.textContent = `${profile.model} · ${profile.category}${profile.benchmark_score ? ` · ${profile.benchmark_score}` : ""}`;
+    group.appendChild(option);
+    seen.add(profile.model);
+  });
+  select.appendChild(group);
 }
 
 function renderModelMeta(message = "") {
@@ -1223,7 +1302,7 @@ function renderModelMeta(message = "") {
 
 function updateModelMeta() {
   const value = $("modelSelect").value;
-  const profile = MODEL_PROFILES.find((item) => item.model === value) || null;
+  const profile = activeModelProfiles().find((item) => item.model === value) || null;
   const live = state.models.find((item) => item.name === value || item.model === value) || null;
   const root = $("modelMeta");
   if (!value) {
@@ -1253,12 +1332,7 @@ function populateSettingsModelSelect() {
     option.textContent = `${name}${model.category ? ` · ${model.category}` : model.size ? ` · ${prettyBytes(model.size)}` : ""}`;
     select.appendChild(option);
   });
-  MODEL_PROFILES.filter((profile) => profile.chat_capable && !seen.has(profile.model)).forEach((profile) => {
-    const option = document.createElement("option");
-    option.value = profile.model;
-    option.textContent = `${profile.model} · ${profile.category}`;
-    select.appendChild(option);
-  });
+  appendBenchmarkProfileOptions(select, seen);
   select.value = current;
 }
 
@@ -1751,12 +1825,7 @@ function populateRetryModelSelect(currentModel) {
     option.textContent = `${name}${model.size ? ` - ${prettyBytes(model.size)}` : ""}`;
     select.appendChild(option);
   });
-  MODEL_PROFILES.filter((profile) => profile.chat_capable && !seen.has(profile.model)).forEach((profile) => {
-    const option = document.createElement("option");
-    option.value = profile.model;
-    option.textContent = `${profile.model} - ${profile.category}`;
-    select.appendChild(option);
-  });
+  appendBenchmarkProfileOptions(select, seen);
   select.value = currentModel && currentModel !== "auto" ? currentModel : "";
 }
 
@@ -2162,11 +2231,28 @@ function renderSettingsMemoryStats() {
 function openSettings() {
   syncSettingsModal();
   $("settingsModal").hidden = false;
+  updateSettingsButtonState();
   $("settingsModelSelect").focus();
 }
 
 function closeSettings() {
   $("settingsModal").hidden = true;
+  updateSettingsButtonState();
+}
+
+function toggleSettings() {
+  if ($("settingsModal").hidden) openSettings();
+  else closeSettings();
+}
+
+function updateSettingsButtonState() {
+  const button = $("settingsBtn");
+  if (!button) return;
+  const isOpen = !$('settingsModal').hidden;
+  button.textContent = isOpen ? "Close settings" : "Settings";
+  button.title = isOpen ? "Close settings" : "Open settings";
+  button.setAttribute("aria-label", button.title);
+  button.setAttribute("aria-expanded", String(isOpen));
 }
 
 function saveSettings() {
@@ -2328,7 +2414,7 @@ function openMemoryDetail(memory) {
 }
 
 function openModelDetail(modelName) {
-  const profile = MODEL_PROFILES.find((item) => item.model === modelName) || null;
+  const profile = activeModelProfiles().find((item) => item.model === modelName) || null;
   const live = state.models.find((item) => item.name === modelName || item.model === modelName) || null;
   const payload = { selected: modelName || "auto", profile, live, model_options: buildModelOptions(), response_format: buildResponseFormat() };
   openDetailModal({
@@ -2338,6 +2424,7 @@ function openModelDetail(modelName) {
       ["Selected", modelName || "Auto route"],
       ["Profile", profile?.category || "server-side / live"],
       ["Job", profile?.job || "not mapped"],
+      ["Benchmark score", profile?.benchmark_score || live?.benchmark?.overall_score || "not benchmarked"],
       ["Live size", live?.size ? prettyBytes(live.size) : "not found in /api/models"],
       ["Modified", live?.modified_at || "unknown"],
       ["Response format", state.settings.responseFormat || "text"]
@@ -2437,7 +2524,7 @@ function openCollectionDetail(title, copy, payload) {
 }
 
 function bindModalChrome() {
-  $("settingsBtn").addEventListener("click", openSettings);
+  $("settingsBtn").addEventListener("click", toggleSettings);
   $("closeSettingsBtn").addEventListener("click", closeSettings);
   $("cancelSettingsBtn").addEventListener("click", closeSettings);
   $("saveSettingsBtn").addEventListener("click", saveSettings);
@@ -2557,7 +2644,7 @@ function addMemory() {
 }
 
 function bindPanelDetails() {
-  $("brandCard").addEventListener("click", () => openCollectionDetail("Local Showcase", "A local-first tool-aware Ollama cockpit with chat, tools, adapters, journal, model settings, and browser-side memories.", { version: "ui-v4-mobile", models: state.models.length, tools: state.tools.length, adapters: state.adapters.length }));
+  $("brandCard").addEventListener("click", () => openCollectionDetail("Local LLM Tooling Showcase", "A local-first tool-aware Ollama cockpit with chat, tools, adapters, journal, model settings, benchmarked profiles, and memory support.", { version: "ui-v5-benchmarks", models: state.models.length, benchmarked_profiles: state.benchmarkProfiles.length, tools: state.tools.length, adapters: state.adapters.length }));
   $("modelPanel").addEventListener("dblclick", () => openModelDetail($("modelSelect").value));
   $("sessionsPanel").addEventListener("dblclick", () => openSessionDetail(activeSession()));
   $("memoriesPanel").addEventListener("dblclick", () => openCollectionDetail("Memories", `${state.memories.length} local browser memories.`, state.memories));
