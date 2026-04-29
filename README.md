@@ -177,7 +177,7 @@ examples/integrations/hyprland/
 
 ## Release Status
 
-Current release line: `v0.1.0-alpha.3`.
+Current release line: `v0.1.0-alpha.4`.
 
 This alpha is suitable for local demos, portfolio review, and continued development. It includes the benchmark suite, install flow, memory tools, mobile/sidebar polish, hotlinked sources, and screenshot assets. Expect UI and browser-local data shapes to keep changing before a stable `v1.0.0`.
 

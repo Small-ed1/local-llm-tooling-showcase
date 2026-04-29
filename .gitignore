@@ -4,7 +4,7 @@ __pycache__/
 .pytest_cache/
 *.pyc
 state/
-desktop/
+/desktop/
 showcase_ui_bundle/
 dist/
 build/

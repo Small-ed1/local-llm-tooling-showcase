@@ -4,7 +4,7 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
-## v0.1.0-alpha.3 - 2026-04-29
+## v0.1.0-alpha.4 - 2026-04-29
 
 ### Added
 
