@@ -151,6 +151,20 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "safe_auto_run": True,
     },
+    "draft_system_prompt": {
+        "description": "Draft a structured system prompt suggestion with title, short message, context, and full prompt. Use only when the user asks to create or refine reusable assistant behavior; the UI/user still chooses whether to save it.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Prompt title."},
+                "short_message": {"type": "string", "description": "Short summary shown in prompt lists."},
+                "context": {"type": "string", "description": "Reusable background context."},
+                "goal": {"type": "string", "description": "What this system prompt should optimize for."},
+            },
+            "required": [],
+        },
+        "safe_auto_run": True,
+    },
     "shell_command": {
         "description": "Run a guarded shell command in the workspace. Use only when the user explicitly asks to run a command or inspect local runtime state. Risky commands require confirmation.",
         "parameters": {

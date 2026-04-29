@@ -1,92 +1,70 @@
 # Local LLM Tooling Showcase
 
-`local-llm-tooling-showcase` is a compact, runnable demo that pulls the strongest tooling ideas out of the existing workspace and presents them as one clean local-first assistant runtime.
+`local-llm-tooling-showcase` is a compact local-first assistant runtime for showing how deterministic routing, guarded tools, local Ollama models, workspace adapters, and event logging fit together.
 
-It is intentionally pitched as a showcase, not a giant platform:
+This is a showcase and starter skeleton, not a hosted SaaS product. It is designed to run on your machine, inspect your workspace, and keep risky local actions behind explicit boundaries.
 
-- deterministic command routing first
-- structured local tools second
-- workspace adapters for source-project provenance third
-- local Ollama reasoning fourth
-- immutable event logging throughout
+![UI preview](docs/screenshots/ui-overview.svg)
 
-## What It Showcases
+## Highlights
 
-This project consolidates the best tooling patterns from the surrounding repos:
-
-- `autonomous-research-station`
-  - direct tool-style execution surfaces
-  - lightweight local retrieval and indexing
-  - local-first Ollama usage
-- `northstar`
-  - deterministic command routing before LLM fallback
-  - concise tool catalog conditioning for the model
-  - operator-friendly CLI shape
-- `behavioral-os`
-  - clean service boundary and context injection mindset
-  - explicit runtime result models instead of vague chat glue
-- `mini-arena-social-simulation`
-  - immutable event journaling
-  - strict structured actions instead of freeform hidden behavior
-
-## Core Flow
-
-1. Route obvious requests to concrete tools.
-2. Execute a bounded local tool when possible.
-3. Log the request, route, tool calls, and response as an immutable event.
-4. If no direct route is enough, select relevant tool docs and gathered context.
-5. Ask a local Ollama model for the final response.
-
-## Included Tooling
-
-- file search
-- file read
-- content search
-- lightweight local index build/query
-- simple web search
-- guarded shell execution
-- workspace adapter inventory
-- Ollama fallback with tool-aware prompts
-
-## Showcase Extras
-
-- stdlib web UI with live requests, adapter cards, and journal feed
-- workspace adapters that detect and summarize source repos
-- stronger shell safety policy with blocked and confirm-required commands
-- CLI commands for `adapters` and `serve`
+- Chat-first web UI with local sessions, message variants, retries, source views, profile settings, and runtime status.
+- Deterministic routing for clean tool-shaped requests before involving an LLM.
+- Model-directed tool loop for questions that need files, search, indexing, adapters, or web context.
+- Tool runtime with file search/read, content search, index build/query, web search, local library access, guarded shell execution, git-style inspection, and task state tools.
+- Planner-safe tool protocol that exposes only selected tools to the model and marks shell execution as confirmation-gated.
+- Ollama-compatible wrapper so other local clients can talk to the showcase through familiar `/api/chat` and `/api/generate` shapes.
+- Event journal for observing routes, tool calls, responses, and autonomous-run traces.
 
 ## Quick Start
 
 ```bash
-cd /home/small_ed/Projects/local-llm-tooling-showcase
 python -m venv .venv
 . .venv/bin/activate
 pip install -e .
-tooling-showcase ask "find file README"
-tooling-showcase ask "read file README.md"
-tooling-showcase ask "search content tool_name"
-tooling-showcase ask "search web for ollama structured outputs"
-tooling-showcase ask "how should I compare local LLM tool runtimes?"
-tooling-showcase adapters
+pytest tests/
 tooling-showcase serve
 ```
 
-If Ollama is running locally, open-ended questions use it automatically. If not, the direct tools still work and the fallback stays explicit.
+Open the web UI at:
 
-## Example Commands
+```text
+http://127.0.0.1:8123
+```
+
+Useful CLI checks:
 
 ```bash
-tooling-showcase ask "build an index for this project"
-tooling-showcase ask "query the index for routing and tool catalog"
+tooling-showcase ask "find file README"
+tooling-showcase ask "read file README.md"
+tooling-showcase ask "search content ToolRuntime"
 tooling-showcase ask "show adapters"
-tooling-showcase ask "run git status" --confirm
-tooling-showcase ask "how does the showcase choose tools?"
 tooling-showcase journal --limit 5
+tooling-showcase models
+```
+
+If Ollama is running locally, open-ended chat requests can use it automatically. If Ollama is not available, deterministic local tools still work and failed fallback paths stay explicit.
+
+## Web UI
+
+The stdlib web UI includes:
+
+- chat with streaming responses, message editing, retry variants, source drawers, and safe markdown rendering
+- local browser sessions with search, recents, export, and deletion controls
+- tool console with presets and raw JSON arguments for debugging
+- adapters page for linked workspace projects
+- journal page for backend event traces
+- settings for models, system prompts, profile data, avatars, memories, theme colors, fonts, and data management
+
+Run it with:
+
+```bash
+tooling-showcase serve
 ```
 
 ## Ollama-Compatible Wrapper
 
-You can expose the showcase as an Ollama-compatible endpoint for apps that expect the Ollama API.
+Start both the showcase UI and the Ollama-compatible wrapper:
 
 ```bash
 ./start-servers.sh
@@ -98,21 +76,68 @@ Default endpoints:
 - raw Ollama: `http://127.0.0.1:11434`
 - tool-capable Ollama wrapper: `http://127.0.0.1:11436`
 
-For a Tailnet-hosted machine, point your client app at:
+Point local clients at the wrapper when you want the familiar Ollama API shape with this project's tool runtime underneath.
 
-```text
-http://<tailnet-ip>:11436
+## Safety Model
+
+This project intentionally does not expose the whole machine directly to a model.
+
+- Tool planning only sees the selected schemas in `tool_protocol.py`.
+- Read/search/index tools are marked safe for automatic execution.
+- Shell execution is guarded and not planner-safe by default.
+- Risky shell patterns require confirmation, and blocked patterns are rejected.
+- Tool calls are bounded, duplicate tool calls are skipped, and results are journaled.
+- Browser sessions, memories, prompts, avatars, and theme settings are stored locally in browser storage.
+
+Review `AGENTS.md`, `tools.py`, and `tool_protocol.py` before using this against sensitive workspaces.
+
+## Tested Behaviors
+
+The test suite covers:
+
+- deterministic routing and direct tool fallback
+- model routing profile selection
+- model-directed tool calls and duplicate-call prevention
+- planner restrictions for hidden or unsafe write tools
+- shell confirmation behavior
+- adapters, retrieval/indexing, journal behavior, and service fallback paths
+- Ollama-compatible wrapper request shapes
+- static server and UI marker behavior
+
+Run all tests with:
+
+```bash
+pytest tests/
 ```
 
-The wrapper accepts standard Ollama-style `/api/chat` and `/api/generate` requests, forwards other Ollama endpoints upstream, and runs showcase tools when they help answer the request.
+Run the frontend syntax check with:
 
-## Why This Exists
+```bash
+node --check src/tooling_showcase/static/app.js
+```
 
-The workspace already had strong pieces, but they were split across separate projects:
+## Project Layout
 
-- one had the best tool runtime
-- one had the best user-facing fallback pattern
-- one had the best service boundary discipline
-- one had the best structured event logging mindset
+```text
+src/tooling_showcase/
+  router.py          deterministic intent routing
+  service.py         chat orchestration, tool loop, logging
+  tools.py           local tool runtime and safety gates
+  tool_protocol.py   planner-visible tool schemas
+  model_routing.py   task-specific model profiles
+  server.py          stdlib web UI/API server
+  ollama_wrapper.py  Ollama-compatible API facade
+  static/            browser UI
+tests/               regression tests
+desktop/             Hypr sidebar experiment
+```
 
-This repo turns that into one small, inspectable showcase you can extend instead of just reviewing in pieces.
+## Release Status
+
+Current release line: `v0.1.0-alpha.1`.
+
+This alpha is suitable for local demos, portfolio review, and continued development. Expect UI and browser-local data shapes to keep changing before a stable `v1.0.0`.
+
+## License
+
+MIT. See `LICENSE`.

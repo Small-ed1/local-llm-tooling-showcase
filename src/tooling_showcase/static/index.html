@@ -11,58 +11,42 @@
   <div class="app-shell">
     <aside class="rail left-rail app-sidebar" aria-label="Workspace navigation">
       <div class="mobile-drawer-head glass"><strong>Navigation</strong><button class="ghost-button icon-button" data-mobile-close aria-label="Close navigation drawer">×</button></div>
-      <section class="brand-card glass clickable-card" id="brandCard" tabindex="0">
-        <div class="brand-mark">LS</div>
-        <div>
-          <h1>Local Showcase</h1>
-          <p>Chat-first local tooling</p>
-        </div>
-      </section>
-
-      <section class="panel glass session-sidebar-card clickable-panel" id="sessionHeader" tabindex="0">
-        <p id="pageEyebrow" class="eyebrow">Chat</p>
-        <h2 id="sessionTitle">New session</h2>
-        <p id="pageSummary" class="page-summary">Ask questions, inspect files, and let tools run in the background.</p>
-        <div class="sidebar-actions">
-          <button id="settingsBtn" class="ghost-button">Settings</button>
-          <button id="densityBtn" class="ghost-button">Density</button>
-          <button id="systemPromptBtn" class="ghost-button">System prompt</button>
-          <button id="exportBtn" class="ghost-button">Export</button>
-          <button id="clearBtn" class="danger-button">Clear chat</button>
-        </div>
-      </section>
-
-      <nav class="page-nav glass" aria-label="Feature pages">
-        <button class="page-nav-button active" data-page-target="chat"><span>Chat</span><small>assistant thread</small></button>
-        <button class="page-nav-button" data-page-target="sessions"><span>Sessions</span><small>history and memories</small></button>
-        <button class="page-nav-button" data-page-target="tools"><span>Tools</span><small>manual runtime</small></button>
-        <button class="page-nav-button" data-page-target="adapters"><span>Adapters</span><small>workspace sources</small></button>
-        <button class="page-nav-button" data-page-target="journal"><span>Journal</span><small>events and traces</small></button>
-      </nav>
-
-      <details class="panel glass sidebar-overview" open>
-        <summary>Overview</summary>
-        <div id="sidebarOverview" class="sidebar-overview-grid"></div>
-      </details>
-
-      <section class="panel glass clickable-panel" id="modelPanel" tabindex="0">
-        <div class="panel-heading">
-          <div>
-            <h2>Model</h2>
-            <p>Pick a model or let routing decide.</p>
+      <section class="sidebar-identity glass clickable-card" id="brandCard" tabindex="0">
+        <div class="identity-top-row">
+          <div class="brand-mark">LS</div>
+          <div class="brand-copy">
+            <h1>Local Showcase</h1>
+            <p>Chat-first local tooling</p>
           </div>
-          <span id="modelStatus" class="status-pill muted">loading</span>
+          <button id="sidebarCollapseBtn" class="ghost-button icon-button sidebar-collapse-button" title="Collapse sidebar" aria-label="Collapse sidebar">=</button>
         </div>
-        <label class="field-label" for="modelSelect">Active model</label>
-        <select id="modelSelect" class="input"></select>
-        <div id="modelMeta" class="model-meta"></div>
-        <div class="control-grid two">
-          <label class="toggle-row"><input id="streamToggle" type="checkbox" checked /> Stream</label>
-          <label class="toggle-row"><input id="confirmToggle" type="checkbox" /> Confirm risky</label>
-          <label class="toggle-row"><input id="memoryToggle" type="checkbox" checked /> Attach memories</label>
-          <label class="toggle-row"><input id="autoScrollToggle" type="checkbox" checked /> Auto-scroll</label>
+        <div class="session-mini clickable-panel" id="sessionHeader" tabindex="0">
+          <p id="pageEyebrow" class="eyebrow">Chat</p>
+          <h2 id="sessionTitle">New session</h2>
+          <p id="pageSummary" class="page-summary">Ask questions, inspect files, and let tools run in the background.</p>
         </div>
+        <div class="sidebar-quick-actions" aria-label="Chat shortcuts">
+          <button id="sidebarNewChatBtn" class="ghost-button icon-button" title="New chat">N</button>
+          <button id="sidebarSearchBtn" class="ghost-button icon-button" title="Search chats">S</button>
+          <button id="recentsToggleBtn" class="ghost-button icon-button" title="Recent chats">R</button>
+        </div>
+        <div id="recentSessionsPullout" class="recent-sessions-pullout" hidden></div>
       </section>
+
+      <details class="nav-menu glass" id="navMenu">
+        <summary><span>Menu</span><small>pages</small></summary>
+        <nav class="page-nav" aria-label="Feature pages">
+          <div class="nav-group-label">Primary</div>
+          <button class="page-nav-button active" data-page-target="chat"><span>Chat</span><small>assistant thread</small></button>
+          <button class="page-nav-button" data-page-target="sessions"><span>Sessions</span><small>history and memories</small></button>
+          <div class="nav-group-label">Developer</div>
+          <button class="page-nav-button" data-page-target="tools"><span>Tools</span><small>manual runtime</small></button>
+          <button class="page-nav-button" data-page-target="adapters"><span>Adapters</span><small>workspace sources</small></button>
+          <button class="page-nav-button" data-page-target="journal"><span>Journal</span><small>events and traces</small></button>
+          <div class="nav-group-label">Runtime</div>
+          <button class="page-nav-button" data-page-target="overview"><span>Overview</span><small>full status</small></button>
+        </nav>
+      </details>
     </aside>
 
     <main class="chat-column page-shell" aria-label="Feature workspace">
@@ -79,6 +63,30 @@
             <div class="intro-actions">
               <button class="chip-button" data-page-target="tools">Open tools</button>
               <button class="chip-button" data-page-target="journal">View journal</button>
+            </div>
+          </section>
+
+          <section class="chat-topbar glass" aria-label="Chat controls">
+            <div class="chat-top-left">
+              <details class="runtime-compact-menu" id="runtimeCompactMenu">
+                <summary title="Runtime readiness" aria-label="Runtime readiness">R</summary>
+                <section id="runtimeStatusStrip" class="runtime-strip compact" aria-label="Runtime readiness"></section>
+              </details>
+              <div class="chat-title-copy">
+                <h2>Assistant thread</h2>
+                <p>Natural language first. Tools and routing stay available when needed.</p>
+              </div>
+              <section class="compact-model-panel" id="modelPanel" tabindex="0" aria-label="Model selector">
+                <span id="modelStatus" class="status-pill muted">loading</span>
+                <select id="modelSelect" class="input compact-model-select"></select>
+                <div id="modelMeta" class="model-meta compact-model-meta"></div>
+              </section>
+            </div>
+            <div class="hidden-runtime-controls" hidden>
+              <input id="streamToggle" type="checkbox" checked />
+              <input id="confirmToggle" type="checkbox" />
+              <input id="memoryToggle" type="checkbox" checked />
+              <input id="autoScrollToggle" type="checkbox" checked />
             </div>
           </section>
 
@@ -118,6 +126,7 @@
                 <h2>Sessions</h2>
                 <span class="status-pill muted">local</span>
               </div>
+              <div id="sessionInfoGrid" class="sidebar-overview-grid session-info-grid"></div>
               <div id="sessionList" class="session-list"></div>
             </section>
 
@@ -129,6 +138,23 @@
               <div id="memoryList" class="memory-list"></div>
             </section>
           </div>
+        </section>
+
+        <section class="feature-page overview-page" data-page="overview" aria-label="Runtime overview page">
+          <section class="page-intro glass">
+            <div>
+              <p class="eyebrow">Overview</p>
+              <h3>Runtime overview</h3>
+              <p>One place for workspace, tools, adapters, memories, journal, and current session status.</p>
+            </div>
+          </section>
+          <section class="panel glass overview-panel clickable-panel" id="overviewPanel" tabindex="0">
+            <div class="panel-heading compact-heading">
+              <h2>Full overview</h2>
+              <span class="status-pill muted">local</span>
+            </div>
+            <div id="overviewGrid" class="sidebar-overview-grid overview-page-grid"></div>
+          </section>
         </section>
 
         <section class="feature-page tools-page" data-page="tools" aria-label="Tools page">
@@ -149,6 +175,7 @@
             </div>
             <div class="tool-console-grid">
               <div class="tool-runner">
+                <div class="tool-preset-grid" id="toolPresetGrid" aria-label="Tool presets"></div>
                 <label class="field-label" for="toolSelect">Manual tool</label>
                 <select id="toolSelect" class="input"></select>
                 <label class="field-label" for="toolArgs">Arguments JSON</label>
@@ -212,6 +239,8 @@
 
   <div id="mobileScrim" class="mobile-scrim" hidden></div>
 
+  <button id="settingsBtn" class="settings-fab" title="Open settings" aria-label="Open settings">Settings</button>
+
 
   <div id="confirmDialog" class="modal-backdrop" hidden>
     <section class="modal-card confirm-card glass" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
@@ -242,6 +271,8 @@
       <nav class="settings-tabs" aria-label="Settings sections">
         <button class="settings-tab active" data-settings-tab="general">General</button>
         <button class="settings-tab" data-settings-tab="model">Model specific</button>
+        <button class="settings-tab" data-settings-tab="prompts">System prompts</button>
+        <button class="settings-tab" data-settings-tab="profile">Profile</button>
         <button class="settings-tab" data-settings-tab="memory">Memory</button>
         <button class="settings-tab" data-settings-tab="interface">Interface</button>
         <button class="settings-tab" data-settings-tab="data">Data</button>
@@ -269,8 +300,8 @@
       </div>
 
       <div class="settings-tab-panel" data-settings-panel="model">
-        <section class="settings-section wide">
-          <h3>Ollama options</h3>
+        <details class="settings-section wide advanced-settings">
+          <summary>Advanced Ollama options</summary>
           <div class="model-settings-grid">
             <label class="number-field"><span>Temperature</span><input id="settingsTemperature" type="number" min="0" max="2" step="0.05" /></label>
             <label class="number-field"><span>Context tokens</span><input id="settingsNumCtx" type="number" min="512" step="512" /></label>
@@ -289,9 +320,68 @@
             <option value="">Default text</option>
             <option value="json">JSON mode</option>
           </select>
-          <label class="field-label" for="settingsSystemPromptInput">System prompt override</label>
-          <textarea id="settingsSystemPromptInput" class="system-prompt settings-prompt" rows="6" placeholder="Optional system prompt override..."></textarea>
-        </section>
+        </details>
+      </div>
+
+      <div class="settings-tab-panel" data-settings-panel="prompts">
+        <div class="settings-grid prompt-settings-grid">
+          <section class="settings-section">
+            <h3>Prompt Library</h3>
+            <label class="field-label" for="settingsPromptSelect">Active prompt</label>
+            <select id="settingsPromptSelect" class="input"></select>
+            <div id="systemPromptList" class="prompt-list"></div>
+            <div class="prompt-actions">
+              <button id="newSystemPromptBtn" class="ghost-button">New prompt</button>
+              <button id="deleteSystemPromptBtn" class="danger-button">Delete prompt</button>
+            </div>
+          </section>
+          <section class="settings-section">
+            <h3>Prompt Editor</h3>
+            <label class="field-label" for="systemPromptTitleInput">Title</label>
+            <input id="systemPromptTitleInput" class="input" placeholder="Precise coding assistant" />
+            <label class="field-label" for="systemPromptShortInput">Short message</label>
+            <input id="systemPromptShortInput" class="input" placeholder="Fast, direct, tool-aware" />
+            <label class="field-label" for="systemPromptContextInput">Context</label>
+            <textarea id="systemPromptContextInput" class="code-input" rows="4" placeholder="Project, role, boundaries, or reusable context..."></textarea>
+            <label class="field-label" for="settingsSystemPromptInput">Full prompt</label>
+            <textarea id="settingsSystemPromptInput" class="system-prompt settings-prompt" rows="7" placeholder="Write the full system prompt here..."></textarea>
+            <div class="prompt-actions">
+              <button id="draftSystemPromptBtn" class="ghost-button">Guided draft</button>
+              <button id="saveSystemPromptBtn" class="primary-button">Save prompt</button>
+            </div>
+            <p class="field-help">Guided draft calls the hidden prompt-drafting tool, then you review and save the result.</p>
+          </section>
+        </div>
+      </div>
+
+      <div class="settings-tab-panel" data-settings-panel="profile">
+        <div class="settings-grid">
+          <section class="settings-section">
+            <h3>Profile</h3>
+            <div class="avatar-upload-grid">
+              <label class="avatar-upload"><span>User icon</span><img id="profileUserAvatarPreview" alt="User icon preview" /><input id="profileUserAvatarInput" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+              <label class="avatar-upload"><span>AI icon</span><img id="profileAssistantAvatarPreview" alt="AI icon preview" /><input id="profileAssistantAvatarInput" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+            </div>
+            <label class="field-label" for="profileNameInput">Name</label>
+            <input id="profileNameInput" class="input" placeholder="Name" />
+            <label class="field-label" for="profileNicknameInput">Nickname</label>
+            <input id="profileNicknameInput" class="input" placeholder="Nickname" />
+            <label class="field-label" for="profileAboutInput">About me</label>
+            <textarea id="profileAboutInput" class="code-input" rows="4" placeholder="Stable facts about you that help the assistant..."></textarea>
+          </section>
+          <section class="settings-section">
+            <h3>Preferences</h3>
+            <label class="field-label" for="profilePreferencesInput">User preferences</label>
+            <textarea id="profilePreferencesInput" class="code-input" rows="5" placeholder="Communication style, recurring priorities, accessibility needs..."></textarea>
+            <label class="field-label" for="profileOtherInput">Other information</label>
+            <textarea id="profileOtherInput" class="code-input" rows="4" placeholder="Anything else useful but not general app settings..."></textarea>
+          </section>
+        </div>
+        <details class="settings-section wide profile-memory-details">
+          <summary>Memories about me</summary>
+          <p class="field-help">Hidden by default. These are the same local UI memories from the Sessions page.</p>
+          <div id="profileMemoryList" class="memory-list compact-memory-list"></div>
+        </details>
       </div>
 
       <div class="settings-tab-panel" data-settings-panel="memory">
@@ -323,26 +413,39 @@
             <label class="number-field"><span>Message width ch</span><input id="settingsMessageWidth" type="number" min="52" max="120" step="2" /></label>
           </section>
         </div>
+        <section class="settings-section wide">
+          <h3>Theme</h3>
+          <div class="theme-settings-grid">
+            <label class="color-field"><span>Primary</span><input id="themePrimaryColor" type="color" /></label>
+            <label class="color-field"><span>Accent</span><input id="themeAccentColor" type="color" /></label>
+            <label class="color-field"><span>Accent 2</span><input id="themeAccentTwoColor" type="color" /></label>
+            <label class="color-field"><span>Panel</span><input id="themePanelColor" type="color" /></label>
+            <label class="color-field"><span>Text</span><input id="themeTextColor" type="color" /></label>
+            <label class="number-field"><span>Font</span><select id="themeFontSelect" class="input"><option value="system">System</option><option value="serif">Serif</option><option value="mono">Mono</option><option value="rounded">Rounded</option></select></label>
+          </div>
+        </section>
       </div>
 
       <div class="settings-tab-panel" data-settings-panel="data">
         <div class="settings-grid">
           <section class="settings-section danger-zone">
-            <h3>Sessions</h3>
-            <p>Manage local browser chat sessions. Single-session rename/delete lives on each session card; mass deletion is here.</p>
+            <h3>Chat management</h3>
+            <p>Manage local browser chat sessions. Single-session rename/delete lives on each session card; active-session export and clearing live here.</p>
+            <button id="settingsExportActiveBtn" class="ghost-button">Export active session</button>
+            <button id="settingsClearChatBtn" class="danger-button">Clear active chat...</button>
             <button id="settingsExportAllBtn" class="ghost-button">Export all sessions</button>
-            <button id="settingsDeleteAllSessionsBtn" class="danger-button">Delete all sessions…</button>
+            <button id="settingsDeleteAllSessionsBtn" class="danger-button">Delete all sessions...</button>
           </section>
           <section class="settings-section danger-zone">
             <h3>Journal</h3>
             <p>Single-entry deletion lives on each journal card. Use this when you want to wipe the backend event feed completely.</p>
-            <button id="settingsClearJournalBtn" class="danger-button">Delete all journal entries…</button>
+            <button id="settingsClearJournalBtn" class="danger-button">Delete all journal entries...</button>
           </section>
         </div>
         <section class="settings-section wide danger-zone">
           <h3>Browser UI state</h3>
           <p>This removes local browser sessions, memories, and settings. Backend files and journal are untouched.</p>
-          <button id="settingsClearBrowserBtn" class="danger-button">Clear browser UI state…</button>
+          <button id="settingsClearBrowserBtn" class="danger-button">Clear browser UI state...</button>
         </section>
       </div>
 
@@ -370,6 +473,45 @@
     </section>
   </div>
 
+  <div id="retryDialog" class="modal-backdrop" hidden>
+    <section class="modal-card retry-card glass" role="dialog" aria-modal="true" aria-labelledby="retryTitle">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Retry</p>
+          <h2 id="retryTitle">Regenerate assistant message</h2>
+        </div>
+        <button id="closeRetryBtn" class="ghost-button icon-button" aria-label="Close retry dialog">×</button>
+      </div>
+      <div class="settings-grid">
+        <section class="settings-section">
+          <h3>Options</h3>
+          <label class="field-label" for="retryModelSelect">Model</label>
+          <select id="retryModelSelect" class="input"></select>
+          <label class="field-label" for="retryStyleSelect">Response direction</label>
+          <select id="retryStyleSelect" class="input">
+            <option value="same">Same intent</option>
+            <option value="more_detail">More details</option>
+            <option value="concise">More concise</option>
+            <option value="debug">Debug failure</option>
+            <option value="creative">Alternative approach</option>
+          </select>
+        </section>
+        <section class="settings-section">
+          <h3>Extra input</h3>
+          <textarea id="retryExtraInput" class="code-input" rows="7" placeholder="Optional retry instructions. The previous user and assistant messages are included as context."></textarea>
+        </section>
+      </div>
+      <details class="settings-section wide retry-context" open>
+        <summary>Context preview</summary>
+        <pre id="retryContextPreview" class="detail-json"></pre>
+      </details>
+      <div class="modal-actions">
+        <button id="cancelRetryBtn" class="ghost-button">Cancel</button>
+        <button id="runRetryBtn" class="primary-button">Retry response</button>
+      </div>
+    </section>
+  </div>
+
   <template id="messageTemplate">
     <article class="message clickable-message">
       <div class="avatar"></div>
@@ -388,6 +530,7 @@
           </div>
         </details>
         <div class="message-content"></div>
+        <div class="message-actions"></div>
       </div>
     </article>
   </template>

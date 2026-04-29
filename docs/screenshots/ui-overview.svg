@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Local LLM Tooling Showcase UI preview</title>
+  <desc id="desc">Stylized preview of the chat UI, runtime menu, model selector, messages, and local tooling sidebar.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07100d"/>
+      <stop offset="1" stop-color="#020403"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#78f0ad"/>
+      <stop offset="1" stop-color="#b6ffd2"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <circle cx="145" cy="90" r="230" fill="#78f0ad" opacity="0.12"/>
+  <circle cx="1050" cy="90" r="240" fill="#78f0ad" opacity="0.10"/>
+
+  <rect x="28" y="28" width="270" height="664" rx="28" fill="#10221a" opacity="0.92" stroke="#78f0ad" stroke-opacity="0.18" filter="url(#shadow)"/>
+  <rect x="50" y="50" width="54" height="54" rx="18" fill="url(#accent)"/>
+  <text x="66" y="84" font-family="Inter,Arial,sans-serif" font-size="20" font-weight="800" fill="#04100a">LS</text>
+  <text x="118" y="72" font-family="Inter,Arial,sans-serif" font-size="20" font-weight="800" fill="#edf7f1">Local Showcase</text>
+  <text x="118" y="94" font-family="Inter,Arial,sans-serif" font-size="12" fill="#91a89c">chat-first local tooling</text>
+
+  <rect x="50" y="130" width="226" height="92" rx="18" fill="#13261e" stroke="#78f0ad" stroke-opacity="0.16"/>
+  <text x="68" y="158" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="800" fill="#78f0ad">CHAT</text>
+  <text x="68" y="184" font-family="Inter,Arial,sans-serif" font-size="20" font-weight="800" fill="#edf7f1">Assistant thread</text>
+  <text x="68" y="205" font-family="Inter,Arial,sans-serif" font-size="12" fill="#91a89c">current session summary</text>
+
+  <rect x="50" y="244" width="226" height="48" rx="18" fill="#0c1712" stroke="#78f0ad" stroke-opacity="0.16"/>
+  <text x="68" y="274" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="800" fill="#edf7f1">Menu</text>
+  <text x="228" y="274" font-family="Inter,Arial,sans-serif" font-size="12" fill="#91a89c">pages</text>
+
+  <rect x="50" y="320" width="64" height="38" rx="14" fill="#13261e" stroke="#78f0ad" stroke-opacity="0.18"/>
+  <text x="78" y="344" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="800" fill="#b6ffd2">N</text>
+  <rect x="131" y="320" width="64" height="38" rx="14" fill="#13261e" stroke="#78f0ad" stroke-opacity="0.18"/>
+  <text x="159" y="344" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="800" fill="#b6ffd2">S</text>
+  <rect x="212" y="320" width="64" height="38" rx="14" fill="#13261e" stroke="#78f0ad" stroke-opacity="0.18"/>
+  <text x="240" y="344" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="800" fill="#b6ffd2">R</text>
+
+  <rect x="322" y="28" width="850" height="664" rx="30" fill="#09140f" stroke="#78f0ad" stroke-opacity="0.12" filter="url(#shadow)"/>
+  <rect x="348" y="54" width="798" height="78" rx="24" fill="#10221a" stroke="#78f0ad" stroke-opacity="0.18"/>
+  <circle cx="384" cy="93" r="20" fill="url(#accent)"/>
+  <text x="378" y="99" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="800" fill="#04100a">R</text>
+  <text x="422" y="86" font-family="Inter,Arial,sans-serif" font-size="24" font-weight="800" fill="#edf7f1">Assistant thread</text>
+  <text x="422" y="108" font-family="Inter,Arial,sans-serif" font-size="12" fill="#91a89c">model routing, guarded tools, local journal</text>
+  <rect x="900" y="70" width="210" height="38" rx="19" fill="#07100d" stroke="#78f0ad" stroke-opacity="0.25"/>
+  <text x="920" y="94" font-family="Inter,Arial,sans-serif" font-size="13" fill="#b6ffd2">Model: auto route</text>
+
+  <rect x="372" y="170" width="520" height="112" rx="24" fill="#13261e" stroke="#78f0ad" stroke-opacity="0.18"/>
+  <text x="400" y="204" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="800" fill="#78f0ad">ASSISTANT</text>
+  <text x="400" y="232" font-family="Inter,Arial,sans-serif" font-size="18" fill="#edf7f1">Used 2 tools before answering.</text>
+  <rect x="400" y="248" width="140" height="22" rx="11" fill="#0b1712" stroke="#78f0ad" stroke-opacity="0.18"/>
+  <text x="416" y="264" font-family="Inter,Arial,sans-serif" font-size="11" fill="#b6ffd2">file_search - ok</text>
+  <rect x="552" y="248" width="130" height="22" rx="11" fill="#0b1712" stroke="#78f0ad" stroke-opacity="0.18"/>
+  <text x="568" y="264" font-family="Inter,Arial,sans-serif" font-size="11" fill="#b6ffd2">read_file - ok</text>
+
+  <rect x="596" y="324" width="500" height="86" rx="24" fill="#143324" stroke="#78f0ad" stroke-opacity="0.24"/>
+  <text x="624" y="358" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="800" fill="#b6ffd2">YOU</text>
+  <text x="624" y="386" font-family="Inter,Arial,sans-serif" font-size="18" fill="#edf7f1">Inspect this project and summarize the runtime.</text>
+
+  <rect x="372" y="460" width="724" height="68" rx="22" fill="#10221a" stroke="#78f0ad" stroke-opacity="0.16"/>
+  <text x="400" y="502" font-family="Inter,Arial,sans-serif" font-size="18" fill="#91a89c">Ask the local runtime something...</text>
+  <circle cx="1058" cy="494" r="20" fill="url(#accent)"/>
+  <text x="1052" y="501" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="800" fill="#04100a">&gt;</text>
+
+  <rect x="372" y="570" width="170" height="48" rx="18" fill="#13261e" stroke="#78f0ad" stroke-opacity="0.18"/>
+  <text x="394" y="600" font-family="Inter,Arial,sans-serif" font-size="13" fill="#edf7f1">Ollama: online</text>
+  <rect x="560" y="570" width="170" height="48" rx="18" fill="#13261e" stroke="#78f0ad" stroke-opacity="0.18"/>
+  <text x="582" y="600" font-family="Inter,Arial,sans-serif" font-size="13" fill="#edf7f1">Tools: safe</text>
+  <rect x="748" y="570" width="170" height="48" rx="18" fill="#13261e" stroke="#78f0ad" stroke-opacity="0.18"/>
+  <text x="770" y="600" font-family="Inter,Arial,sans-serif" font-size="13" fill="#edf7f1">Journal: active</text>
+</svg>

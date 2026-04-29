@@ -15,6 +15,7 @@ const TOOL_EXAMPLES = {
   adapter_inventory: {},
   build_index: {},
   content_search: { query: "ToolRuntime" },
+  draft_system_prompt: { title: "Coding assistant", goal: "direct implementation help", context: "" },
   file_search: { query: "README" },
   library_info: {},
   library_read_epub: { id: "", query: "", max_chars: 12000 },
@@ -31,6 +32,7 @@ const TOOL_DOCS = {
   adapter_inventory: { name: "Adapter Inventory", safety: "read-only", summary: "Show which workspace adapters are detected and usable.", usage: "Use this when you want provenance, workspace status, or adapter summaries." },
   build_index: { name: "Build Index", safety: "read/write state", summary: "Build the lightweight local index from text files.", usage: "Run after a big repo change or before repeated codebase questions." },
   content_search: { name: "Content Search", safety: "read-only", summary: "Search file contents for a string or symbol.", usage: "Useful for locating functions, prompts, routes, or feature flags." },
+  draft_system_prompt: { name: "Draft System Prompt", safety: "read-only suggestion", summary: "Draft a structured system prompt for user review.", usage: "Use from settings guided creation or when the user asks to create reusable behavior." },
   file_search: { name: "File Search", safety: "read-only", summary: "Find files by filename.", usage: "Use before read_file when you know part of a filename but not the exact path." },
   library_info: { name: "Library Info", safety: "read-only", summary: "Show configured local library sources.", usage: "Use to confirm EPUB/ZIM library availability." },
   library_read_epub: { name: "Read EPUB", safety: "read-only", summary: "Read a selected EPUB item or matching passage.", usage: "Requires a library item id from library_search." },
@@ -42,6 +44,33 @@ const TOOL_DOCS = {
   tree_view: { name: "Tree View", safety: "read-only", summary: "Show a shallow project tree.", usage: "Good for quickly understanding project layout." },
   web_search: { name: "Web Search", safety: "network", summary: "Run a simple web lookup.", usage: "Use for docs, current info, or external references." }
 };
+
+const PLANNER_SAFE_TOOLS = new Set([
+  "adapter_inventory",
+  "build_index",
+  "content_search",
+  "draft_system_prompt",
+  "expand_search_result",
+  "file_search",
+  "library_info",
+  "library_read_epub",
+  "library_read_zim",
+  "library_search",
+  "query_index",
+  "read_file",
+  "tree_view",
+  "web_search"
+]);
+
+const TOOL_PRESETS = [
+  { id: "inspect_repo", label: "Inspect repo", tool: "tree_view", args: { path: ".", max_depth: 4 } },
+  { id: "read_readme", label: "Read README", tool: "read_file", args: { path: "README.md" } },
+  { id: "build_index", label: "Build index", tool: "build_index", args: {} },
+  { id: "query_index", label: "Query index", tool: "query_index", args: { query: "routing and tool catalog" } },
+  { id: "git_status", label: "Git status", tool: "git_status", args: {} },
+  { id: "search_web", label: "Search web", tool: "web_search", args: { query: "Ollama structured outputs" } },
+  { id: "search_files", label: "Search files", tool: "file_search", args: { query: "README" } }
+];
 
 const ROUTE_PATTERNS = [
   ["vision", /\b(image|photo|picture|screenshot|diagram|chart|graph|ocr|scan|visual|vision)\b/i],
@@ -63,10 +92,20 @@ const DEFAULT_SETTINGS = {
   openThinking: false,
   detailsEnabled: true,
   compactTools: false,
+  sidebarCollapsed: false,
   journalLimit: 50,
   messageWidth: 78,
   memoryPrefix: "Relevant local UI memories",
+  profilePrefix: "Relevant profile information",
   responseFormat: "",
+  theme: {
+    primary: "#07100d",
+    accent: "#78f0ad",
+    accentTwo: "#b6ffd2",
+    panel: "#13261e",
+    text: "#edf7f1",
+    font: "system"
+  },
   modelOptions: {
     temperature: 0.2,
     num_ctx: 4096,
@@ -80,6 +119,16 @@ const DEFAULT_SETTINGS = {
   }
 };
 
+const DEFAULT_PROFILE = {
+  name: "",
+  nickname: "",
+  about: "",
+  preferences: "",
+  other: "",
+  userAvatar: "",
+  assistantAvatar: ""
+};
+
 const PAGE_META = {
   chat: {
     eyebrow: "Chat",
@@ -90,6 +139,11 @@ const PAGE_META = {
     eyebrow: "State",
     title: "Sessions and memories",
     summary: "Manage browser-local chat history and reusable notes."
+  },
+  overview: {
+    eyebrow: "Overview",
+    title: "Runtime overview",
+    summary: "Inspect the local runtime, workspace, and session state."
   },
   tools: {
     eyebrow: "Runtime",
@@ -113,7 +167,10 @@ const STORAGE_KEYS = {
   activeSession: "showcase.ui.activeSession.v3",
   memories: "showcase.ui.memories.v3",
   settings: "showcase.ui.settings.v3",
-  systemPrompt: "showcase.ui.systemPrompt.v3"
+  systemPrompt: "showcase.ui.systemPrompt.v3",
+  systemPrompts: "showcase.ui.systemPrompts.v1",
+  activeSystemPrompt: "showcase.ui.activeSystemPrompt.v1",
+  profile: "showcase.ui.profile.v1"
 };
 
 const state = {
@@ -126,11 +183,20 @@ const state = {
   adapters: [],
   journal: [],
   journalStats: {},
+  runtime: null,
+  modelsOk: null,
+  toolsError: "",
   settings: structuredClone(DEFAULT_SETTINGS),
+  systemPrompts: [],
+  activeSystemPromptId: null,
+  profile: structuredClone(DEFAULT_PROFILE),
   busy: false,
   lastController: null,
   pendingConfirm: null,
   detailPayload: null,
+  retryMessageId: null,
+  editingMessageId: null,
+  sessionSearchQuery: "",
   activePage: "chat"
 };
 
@@ -151,6 +217,97 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function renderInlineMarkdown(text) {
+  return escapeHtml(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+
+function renderMarkdownBlocks(text) {
+  const lines = String(text || "").split("\n");
+  const html = [];
+  let paragraph = [];
+  let listType = null;
+  let listItems = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    html.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  };
+  const flushList = () => {
+    if (!listType) return;
+    html.push(`<${listType}>${listItems.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</${listType}>`);
+    listType = null;
+    listItems = [];
+  };
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      return;
+    }
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = heading[1].length + 2;
+      html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+      return;
+    }
+    const unordered = trimmed.match(/^[-*]\s+(.+)$/);
+    if (unordered) {
+      flushParagraph();
+      if (listType && listType !== "ul") flushList();
+      listType = "ul";
+      listItems.push(unordered[1]);
+      return;
+    }
+    const ordered = trimmed.match(/^\d+\.\s+(.+)$/);
+    if (ordered) {
+      flushParagraph();
+      if (listType && listType !== "ol") flushList();
+      listType = "ol";
+      listItems.push(ordered[1]);
+      return;
+    }
+    flushList();
+    paragraph.push(trimmed);
+  });
+  flushParagraph();
+  flushList();
+  return html.join("");
+}
+
+function renderSafeMarkdown(text) {
+  const source = String(text || "");
+  const parts = [];
+  const fence = /```([\w.+-]*)\n?([\s\S]*?)```/g;
+  let cursor = 0;
+  let match;
+  while ((match = fence.exec(source))) {
+    if (match.index > cursor) parts.push(renderMarkdownBlocks(source.slice(cursor, match.index)));
+    const language = match[1] ? ` data-language="${escapeHtml(match[1])}"` : "";
+    parts.push(`<pre class="markdown-code"${language}><code>${escapeHtml(match[2].replace(/^\n|\n$/g, ""))}</code></pre>`);
+    cursor = fence.lastIndex;
+  }
+  if (cursor < source.length) parts.push(renderMarkdownBlocks(source.slice(cursor)));
+  return parts.join("") || "";
+}
+
+function renderMessageContent(root, message) {
+  if (message.role === "assistant") {
+    root.classList.add("rendered");
+    root.innerHTML = renderSafeMarkdown(message.content || "");
+    return;
+  }
+  root.classList.remove("rendered");
+  root.textContent = message.content || "";
+}
+
 function prettyBytes(bytes) {
   if (!Number.isFinite(Number(bytes)) || Number(bytes) <= 0) return "unknown size";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -161,6 +318,26 @@ function prettyBytes(bytes) {
     unit += 1;
   }
   return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function hexToRgba(hex, alpha = 1) {
+  const clean = String(hex || "").replace("#", "");
+  if (!/^[0-9a-f]{6}$/i.test(clean)) return "rgba(19, 38, 30, 0.78)";
+  const value = Number.parseInt(clean, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function fontStack(choice) {
+  const stacks = {
+    system: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    serif: 'Charter, "Iowan Old Style", Georgia, ui-serif, serif',
+    mono: '"SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas, monospace',
+    rounded: 'ui-rounded, "SF Pro Rounded", Nunito, Inter, ui-sans-serif, system-ui, sans-serif'
+  };
+  return stacks[choice] || stacks.system;
 }
 
 function stripThinkTags(text) {
@@ -195,6 +372,111 @@ function activeSession() {
   return state.sessions.find((session) => session.id === state.activeSessionId) ?? state.sessions[0];
 }
 
+function activeSystemPrompt() {
+  return state.systemPrompts.find((prompt) => prompt.id === state.activeSystemPromptId) || null;
+}
+
+function profileHasContent(profile = state.profile) {
+  return Object.values(profile || {}).some((value) => String(value || "").trim());
+}
+
+function makeMessageVariant(message, extra = {}) {
+  return {
+    id: extra.variantId || uid("variant"),
+    content: extra.content ?? message.content ?? "",
+    thinking: extra.thinking ?? message.thinking ?? "",
+    toolCalls: extra.toolCalls ?? message.toolCalls ?? [],
+    createdAt: extra.createdAt ?? message.createdAt ?? new Date().toISOString(),
+    ok: extra.ok ?? message.ok ?? true,
+    model: extra.model ?? message.model ?? null,
+    options: extra.options ?? message.options ?? null,
+    modelRoute: extra.modelRoute ?? message.modelRoute ?? null,
+    latencyMs: extra.latencyMs ?? message.latencyMs ?? null,
+    requestText: extra.requestText ?? message.requestText ?? null,
+    editMeta: extra.editMeta ?? null,
+    retryMeta: extra.retryMeta ?? null
+  };
+}
+
+function syncMessageFromActiveVariant(message) {
+  const variants = Array.isArray(message.variants) ? message.variants : [];
+  if (!variants.length) return message;
+  const index = Math.max(0, Math.min(Number(message.activeVariant) || 0, variants.length - 1));
+  message.activeVariant = index;
+  const variant = variants[index];
+  ["content", "thinking", "toolCalls", "createdAt", "ok", "model", "options", "modelRoute", "latencyMs", "requestText", "editMeta", "retryMeta"].forEach((key) => {
+    message[key] = variant[key];
+  });
+  return message;
+}
+
+function ensureMessageVariants(message) {
+  if (!message) return null;
+  if (!Array.isArray(message.variants) || !message.variants.length) {
+    message.variants = [makeMessageVariant(message, { variantId: uid("variant") })];
+    message.activeVariant = 0;
+  }
+  return syncMessageFromActiveVariant(message);
+}
+
+function activeMessageVariant(message) {
+  ensureMessageVariants(message);
+  return message.variants[message.activeVariant || 0];
+}
+
+function addMessageVariant(message, extra = {}) {
+  ensureMessageVariants(message);
+  const variant = makeMessageVariant(message, extra);
+  message.variants.push(variant);
+  message.activeVariant = message.variants.length - 1;
+  syncMessageFromActiveVariant(message);
+  return variant;
+}
+
+function patchActiveMessageVariant(message, patch) {
+  const variant = activeMessageVariant(message);
+  Object.assign(variant, patch);
+  syncMessageFromActiveVariant(message);
+  return variant;
+}
+
+function setMessageVariant(message, index) {
+  ensureMessageVariants(message);
+  message.activeVariant = Math.max(0, Math.min(index, message.variants.length - 1));
+  syncMessageFromActiveVariant(message);
+}
+
+function normalizeSessionMessages(session) {
+  (session?.messages || []).forEach((message) => ensureMessageVariants(message));
+}
+
+function messageIndex(messageId) {
+  const session = activeSession();
+  return session?.messages?.findIndex((message) => message.id === messageId) ?? -1;
+}
+
+function findPreviousUserMessage(messageId) {
+  const session = activeSession();
+  const index = messageIndex(messageId);
+  if (!session || index < 0) return null;
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (session.messages[i].role === "user") return session.messages[i];
+  }
+  return null;
+}
+
+function findPairedAssistantMessage(userMessageId) {
+  const session = activeSession();
+  const index = messageIndex(userMessageId);
+  if (!session || index < 0) return null;
+  for (let i = index + 1; i < session.messages.length; i += 1) {
+    const message = session.messages[i];
+    if (message.role === "user") return null;
+    if (message.role === "assistant") return message;
+  }
+  return null;
+}
+
 function deepMerge(base, override) {
   const result = structuredClone(base);
   for (const [key, value] of Object.entries(override || {})) {
@@ -209,11 +491,15 @@ function deepMerge(base, override) {
 
 function persist() {
   syncSettingsFromMainControls();
+  state.sessions.forEach((session) => normalizeSessionMessages(session));
   localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(state.sessions));
   localStorage.setItem(STORAGE_KEYS.activeSession, state.activeSessionId ?? "");
   localStorage.setItem(STORAGE_KEYS.memories, JSON.stringify(state.memories));
   localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(state.settings));
   localStorage.setItem(STORAGE_KEYS.systemPrompt, $("systemPromptInput").value);
+  localStorage.setItem(STORAGE_KEYS.systemPrompts, JSON.stringify(state.systemPrompts));
+  localStorage.setItem(STORAGE_KEYS.activeSystemPrompt, state.activeSystemPromptId ?? "");
+  localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(state.profile));
 }
 
 function loadLocalState() {
@@ -224,8 +510,19 @@ function loadLocalState() {
   try { state.sessions = JSON.parse(localStorage.getItem(STORAGE_KEYS.sessions) || oldSessions || "[]"); } catch { state.sessions = []; }
   try { state.memories = JSON.parse(localStorage.getItem(STORAGE_KEYS.memories) || oldMemories || "[]"); } catch { state.memories = []; }
   try { state.settings = deepMerge(DEFAULT_SETTINGS, JSON.parse(localStorage.getItem(STORAGE_KEYS.settings) || "{}")); } catch { state.settings = structuredClone(DEFAULT_SETTINGS); }
+  try { state.systemPrompts = JSON.parse(localStorage.getItem(STORAGE_KEYS.systemPrompts) || "[]"); } catch { state.systemPrompts = []; }
+  try { state.profile = deepMerge(DEFAULT_PROFILE, JSON.parse(localStorage.getItem(STORAGE_KEYS.profile) || "{}")); } catch { state.profile = structuredClone(DEFAULT_PROFILE); }
   state.activeSessionId = localStorage.getItem(STORAGE_KEYS.activeSession) || oldActive || null;
-  $("systemPromptInput").value = localStorage.getItem(STORAGE_KEYS.systemPrompt) || oldSettingsPrompt || "";
+  const legacyPrompt = localStorage.getItem(STORAGE_KEYS.systemPrompt) || oldSettingsPrompt || "";
+  state.activeSystemPromptId = localStorage.getItem(STORAGE_KEYS.activeSystemPrompt) || null;
+  if (!state.systemPrompts.length && legacyPrompt.trim()) {
+    const prompt = { id: uid("prompt"), title: "Imported prompt", shortMessage: "Legacy system prompt", context: "", fullPrompt: legacyPrompt.trim(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    state.systemPrompts.push(prompt);
+    state.activeSystemPromptId = prompt.id;
+  }
+  if (state.activeSystemPromptId && !state.systemPrompts.some((prompt) => prompt.id === state.activeSystemPromptId)) state.activeSystemPromptId = null;
+  $("systemPromptInput").value = activeSystemPrompt()?.fullPrompt || legacyPrompt || "";
+  state.sessions.forEach((session) => normalizeSessionMessages(session));
   applySettingsToMainControls();
   if (!state.sessions.length) createSession(false);
   if (!activeSession()) state.activeSessionId = state.sessions[0].id;
@@ -302,19 +599,25 @@ function deleteAllSessions() {
 
 function addSessionMessage(role, content, extra = {}) {
   const session = activeSession();
+  const createdAt = new Date().toISOString();
   const message = {
     id: uid("msg"),
     role,
     content: content ?? "",
     thinking: extra.thinking ?? "",
     toolCalls: extra.toolCalls ?? [],
-    createdAt: new Date().toISOString(),
+    createdAt,
     ok: extra.ok ?? true,
     model: extra.model ?? null,
     options: extra.options ?? null,
     modelRoute: extra.modelRoute ?? null,
-    latencyMs: extra.latencyMs ?? null
+    latencyMs: extra.latencyMs ?? null,
+    requestText: extra.requestText ?? null,
+    parentUserMessageId: extra.parentUserMessageId ?? null,
+    activeVariant: 0,
+    variants: []
   };
+  message.variants = [makeMessageVariant(message, { createdAt })];
   session.messages.push(message);
   if (role === "user") updateSessionTitle(session, content);
   persist();
@@ -328,6 +631,7 @@ function renderAll() {
   renderSessions();
   renderMemories();
   renderChat();
+  renderRuntimeStatus();
   updatePageChrome();
   applySettingsVisuals();
 }
@@ -360,25 +664,85 @@ function setActivePage(pageName, { closeDrawer = true } = {}) {
 }
 
 function renderSidebarOverview() {
-  const root = $("sidebarOverview");
-  if (!root) return;
   const session = activeSession();
   const messages = state.sessions.reduce((sum, item) => sum + (item.messages?.length || 0), 0);
   const toolCalls = state.sessions.reduce((sum, item) => sum + (item.messages || []).reduce((inner, msg) => inner + (msg.toolCalls || []).length, 0), 0);
-  root.innerHTML = `
+  const overview = $("overviewGrid");
+  if (overview) {
+    overview.innerHTML = `
     <div class="overview-tile"><strong>${state.sessions.length}</strong><span>sessions</span></div>
-    <div class="overview-tile"><strong>${messages}</strong><span>messages</span></div>
     <div class="overview-tile"><strong>${state.tools.length || "-"}</strong><span>tools</span></div>
     <div class="overview-tile"><strong>${state.journal.length || "-"}</strong><span>events loaded</span></div>
     <div class="overview-tile"><strong>${state.memories.length}</strong><span>memories</span></div>
+    <div class="overview-tile"><strong>${state.adapters.length || "-"}</strong><span>adapters</span></div>
     <div class="overview-tile"><strong>${toolCalls}</strong><span>tool calls</span></div>`;
-  root.title = session?.title ? `Active session: ${session.title}` : "No active session";
+  }
+  const sessionInfo = $("sessionInfoGrid");
+  if (sessionInfo) {
+    const currentMessages = session?.messages?.length || 0;
+    const updated = session?.messages?.at(-1)?.createdAt || session?.createdAt;
+    sessionInfo.innerHTML = `
+      <div class="overview-tile"><strong>${currentMessages}</strong><span>active messages</span></div>
+      <div class="overview-tile"><strong>${messages}</strong><span>all messages</span></div>
+      <div class="overview-tile"><strong>${session?.title ? escapeHtml(session.title).slice(0, 18) : "New"}</strong><span>active session</span></div>
+      <div class="overview-tile"><strong>${updated ? new Date(updated).toLocaleDateString() : "-"}</strong><span>last update</span></div>`;
+  }
+  renderRecentSessions();
+}
+
+function plannerSafeToolCount() {
+  return state.tools.map((tool) => toolId(tool)).filter((id) => PLANNER_SAFE_TOOLS.has(id)).length;
+}
+
+function runtimeReadiness() {
+  const selectedModel = $("modelSelect")?.value || "auto route";
+  const toolTotal = state.tools.length || state.runtime?.tools?.length || 0;
+  const adapterTotal = state.adapters.length || state.runtime?.adapters?.length || 0;
+  const journalKnown = Boolean(state.journalStats.path || state.runtime?.journal?.path || state.journal.length);
+  return [
+    { label: "Ollama", value: state.modelsOk === null ? "checking" : state.modelsOk ? "online" : "offline", status: state.modelsOk ? "ok" : state.modelsOk === false ? "bad" : "muted", detail: state.modelsOk ? `${state.models.length} local models` : "start Ollama or check endpoint" },
+    { label: "Model", value: selectedModel, status: selectedModel === "auto route" ? "muted" : "ok", detail: selectedModel === "auto route" ? "server routing enabled" : "manual override" },
+    { label: "Tools", value: `${plannerSafeToolCount()}/${toolTotal || "-"}`, status: toolTotal ? "ok" : "bad", detail: "planner-safe / runtime" },
+    { label: "Workspace", value: adapterTotal ? `${adapterTotal} adapters` : "workspace", status: adapterTotal ? "ok" : "warn", detail: adapterTotal ? "adapter inventory ready" : "no adapters loaded yet" },
+    { label: "Journal", value: journalKnown ? "active" : "empty", status: "muted", detail: state.journal.length ? `${state.journal.length} events loaded` : "events appear after requests" }
+  ];
+}
+
+function renderRuntimeStatus() {
+  const root = $("runtimeStatusStrip");
+  if (!root) return;
+  root.innerHTML = runtimeReadiness().map((item) => `
+    <div class="runtime-tile ${item.status}">
+      <span>${escapeHtml(item.label)}</span>
+      <strong>${escapeHtml(item.value)}</strong>
+      <small>${escapeHtml(item.detail)}</small>
+    </div>`).join("");
+}
+
+async function loadRuntime() {
+  try {
+    const res = await fetch("/api/runtime");
+    state.runtime = await res.json();
+  } catch (error) {
+    state.runtime = { ok: false, error: error.message };
+  } finally {
+    renderRuntimeStatus();
+  }
 }
 
 function renderSessions() {
   const root = $("sessionList");
   root.innerHTML = "";
-  state.sessions.forEach((session) => {
+  const query = state.sessionSearchQuery.trim().toLowerCase();
+  const sessions = query
+    ? state.sessions.filter((session) => JSON.stringify(session).toLowerCase().includes(query))
+    : state.sessions;
+  if (!sessions.length) {
+    root.innerHTML = `<div class="session-item diagnostic-card"><strong>No matching chats</strong><span>Search did not match local session titles or messages.</span></div>`;
+    renderRecentSessions();
+    return;
+  }
+  sessions.forEach((session) => {
     const item = document.createElement("div");
     item.className = `session-item clickable-card ${session.id === state.activeSessionId ? "active" : ""}`;
     const count = session.messages.length;
@@ -406,6 +770,55 @@ function renderSessions() {
     item.addEventListener("dblclick", () => openSessionDetail(session));
     root.appendChild(item);
   });
+  renderRecentSessions();
+}
+
+function renderRecentSessions() {
+  const root = $("recentSessionsPullout");
+  if (!root) return;
+  const recent = [...state.sessions]
+    .sort((a, b) => new Date(b.messages?.at(-1)?.createdAt || b.createdAt) - new Date(a.messages?.at(-1)?.createdAt || a.createdAt))
+    .slice(0, 3);
+  if (!recent.length) {
+    root.innerHTML = `<div class="recent-empty">No chats yet.</div>`;
+    return;
+  }
+  root.innerHTML = recent.map((session) => `
+    <button class="recent-session-button ${session.id === state.activeSessionId ? "active" : ""}" data-session-id="${escapeHtml(session.id)}">
+      <strong>${escapeHtml(session.title || "New session")}</strong>
+      <span>${session.messages?.length || 0} messages</span>
+    </button>`).join("");
+  root.querySelectorAll("[data-session-id]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      state.activeSessionId = button.dataset.sessionId;
+      root.hidden = true;
+      persist();
+      renderAll();
+      setActivePage("chat");
+    });
+  });
+}
+
+function toggleRecentSessionsPullout() {
+  const root = $("recentSessionsPullout");
+  if (!root) return;
+  renderRecentSessions();
+  root.hidden = !root.hidden;
+}
+
+function searchSessions() {
+  const value = prompt("Search chats:", state.sessionSearchQuery || "");
+  if (value === null) return;
+  state.sessionSearchQuery = value.trim();
+  setActivePage("sessions");
+  renderSessions();
+}
+
+function toggleSidebarCollapsed() {
+  state.settings.sidebarCollapsed = !state.settings.sidebarCollapsed;
+  applySettingsVisuals();
+  persist();
 }
 
 function renderMemories() {
@@ -448,6 +861,7 @@ function renderMemories() {
 
 function renderChat() {
   const session = activeSession();
+  normalizeSessionMessages(session);
   chatLog.innerHTML = "";
   if (!session?.messages.length) {
     chatLog.innerHTML = `
@@ -472,13 +886,23 @@ function renderChat() {
 }
 
 function renderMessage(message) {
+  ensureMessageVariants(message);
   const node = template.content.firstElementChild.cloneNode(true);
   node.classList.add(message.role);
+  node.classList.toggle("failed", message.ok === false);
   node.dataset.messageId = message.id;
+  applyMessageAvatar(node, message.role);
   node.querySelector(".message-role").textContent = message.role === "user" ? "You" : message.role === "tool" ? "Tool" : "Assistant";
   node.querySelector(".message-time").textContent = new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  node.querySelector(".message-content").textContent = message.content || "";
+  const contentRoot = node.querySelector(".message-content");
+  if (state.editingMessageId === message.id && message.role === "user") {
+    contentRoot.classList.remove("rendered");
+    renderInlineEditor(contentRoot, message);
+  } else {
+    renderMessageContent(contentRoot, message);
+  }
   renderActivityBox(node, message);
+  renderMessageActions(node, message);
   node.querySelector(".copy-message").addEventListener("click", async (event) => {
     event.stopPropagation();
     await navigator.clipboard.writeText(`${message.content || ""}${message.thinking ? `\n\n[Thinking]\n${message.thinking}` : ""}`);
@@ -489,11 +913,97 @@ function renderMessage(message) {
   });
   node.addEventListener("click", (event) => {
     if (!state.settings.detailsEnabled) return;
-    if (event.target.closest("button, details, summary, pre")) return;
+    if (event.target.closest("button, details, summary, pre, textarea, input, select, .message-actions, .inline-edit-box")) return;
     openMessageDetail(message);
   });
   chatLog.appendChild(node);
   return node;
+}
+
+function applyMessageAvatar(node, role) {
+  const avatar = node.querySelector(".avatar");
+  const image = role === "user" ? state.profile.userAvatar : role === "assistant" ? state.profile.assistantAvatar : "";
+  if (!avatar || !image) return;
+  avatar.style.backgroundImage = `url(${image})`;
+  avatar.style.backgroundSize = "cover";
+  avatar.style.backgroundPosition = "center";
+}
+
+function renderInlineEditor(root, message) {
+  root.innerHTML = `
+    <div class="inline-edit-box">
+      <textarea class="code-input inline-edit-input" rows="5">${escapeHtml(message.content || "")}</textarea>
+      <div class="inline-edit-actions">
+        <button class="ghost-button" data-edit-action="cancel">Cancel</button>
+        <button class="primary-button" data-edit-action="save">Save edit and rerun</button>
+      </div>
+    </div>`;
+  const textarea = root.querySelector("textarea");
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  root.querySelector('[data-edit-action="cancel"]').addEventListener("click", (event) => {
+    event.stopPropagation();
+    state.editingMessageId = null;
+    renderChat();
+  });
+  root.querySelector('[data-edit-action="save"]').addEventListener("click", (event) => {
+    event.stopPropagation();
+    finishUserMessageEdit(message.id, textarea.value);
+  });
+}
+
+function renderMessageActions(node, message) {
+  const root = node.querySelector(".message-actions");
+  const sources = collectSources(message);
+  const variantCount = message.variants?.length || 1;
+  const canVariant = variantCount > 1;
+  const parts = [];
+  if (canVariant) {
+    parts.push(`
+      <div class="variant-switcher" title="Message variants">
+        <button class="ghost-button" data-message-action="variant-prev">&lt;</button>
+        <span>${(message.activeVariant || 0) + 1} of ${variantCount}</span>
+        <button class="ghost-button" data-message-action="variant-next">&gt;</button>
+      </div>`);
+  }
+  if (message.role === "user") parts.push('<button class="ghost-button" data-message-action="edit">Edit</button>');
+  if (message.role === "assistant") {
+    parts.push('<button class="ghost-button" data-message-action="retry">Retry</button>');
+    if (message.ok === false) parts.push('<button class="ghost-button" data-message-action="edit-prev">Edit prompt</button>');
+  }
+  if (sources.length) parts.push(`<button class="ghost-button" data-message-action="sources">Sources (${sources.length})</button>`);
+  if (message.ok === false) parts.push('<button class="danger-button" data-message-action="debug">Debug</button>');
+  root.innerHTML = parts.join("");
+  root.hidden = !parts.length;
+  root.querySelectorAll("button").forEach((button) => button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    handleMessageAction(message, button.dataset.messageAction);
+  }));
+}
+
+function handleMessageAction(message, action) {
+  if (!action) return;
+  if (action === "edit") return startUserMessageEdit(message.id);
+  if (action === "edit-prev") {
+    const user = findPreviousUserMessage(message.id);
+    if (user) startUserMessageEdit(user.id);
+    return;
+  }
+  if (action === "retry") return openRetryDialog(message);
+  if (action === "debug") return openMessageDetail(message);
+  if (action === "sources") return openSourcesDetail(message);
+  if (action === "variant-prev" || action === "variant-next") {
+    const count = message.variants?.length || 1;
+    const delta = action === "variant-prev" ? -1 : 1;
+    const next = ((message.activeVariant || 0) + delta + count) % count;
+    setMessageVariant(message, next);
+    if (message.role === "user") {
+      const paired = findPairedAssistantMessage(message.id);
+      if (paired && (paired.variants?.length || 0) > next) setMessageVariant(paired, next);
+    }
+    persist();
+    renderChat();
+  }
 }
 
 function renderActivityBox(node, message) {
@@ -512,12 +1022,30 @@ function renderActivityBox(node, message) {
   }
 
   box.hidden = false;
-  box.open = false;
+  box.open = Boolean(state.settings.openThinking);
   title.textContent = hasThinking ? (hasTools ? "Thinking + tool use" : "Thinking") : "Tool use";
   meta.textContent = hasTools ? `${calls.length} tool${calls.length === 1 ? "" : "s"}` : "";
   thinkingContent.hidden = !hasThinking;
   thinkingContent.textContent = hasThinking ? formatActivityThinking(message.thinking, calls) : "";
+  renderToolPipeline(node, calls);
   renderToolCalls(toolsRoot, calls, { nested: true });
+}
+
+function renderToolPipeline(node, calls) {
+  const toolsRoot = node.querySelector(".activity-tool-stack");
+  let root = node.querySelector(".tool-pipeline-summary");
+  if (!root) {
+    root = document.createElement("div");
+    root.className = "tool-pipeline-summary";
+    toolsRoot.before(root);
+  }
+  root.hidden = !calls.length;
+  root.innerHTML = calls.map((call, index) => `
+    <div class="tool-pipeline-step ${call.ok ? "ok" : "bad"}">
+      <span>${index + 1}</span>
+      <strong>${escapeHtml(call.tool_name || call.name || "tool")}</strong>
+      <small>${call.ok ? "ok" : "failed"}</small>
+    </div>`).join("");
 }
 
 function formatActivityThinking(thinking, calls) {
@@ -535,7 +1063,8 @@ function renderToolCalls(root, calls, { nested = false } = {}) {
   calls.forEach((call) => {
     const card = document.createElement(nested ? "details" : "section");
     card.className = `tool-call clickable-card${nested ? " nested-tool-call" : ""}`;
-    const summary = escapeHtml(call.summary || JSON.stringify(call.data ?? call, null, 2));
+    const rawSummary = call.summary || JSON.stringify(call.data ?? call, null, 2);
+    const summary = escapeHtml(String(rawSummary).length > 900 ? `${String(rawSummary).slice(0, 900)}\n... [open details for full output]` : rawSummary);
     const payload = escapeHtml(JSON.stringify(call, null, 2));
     card.innerHTML = `
       ${nested
@@ -552,6 +1081,87 @@ function renderToolCalls(root, calls, { nested = false } = {}) {
   });
 }
 
+function collectSources(message) {
+  const sources = [];
+  (message.toolCalls || []).forEach((call, callIndex) => {
+    const tool = call.tool_name || call.name || "tool";
+    const data = call.data || {};
+    const base = { tool, callIndex: callIndex + 1, ok: call.ok !== false };
+    if (tool === "web_search") {
+      (data.results || []).slice(0, 12).forEach((item, index) => {
+        const title = item.title || item.Text || item.Heading || `Web result ${index + 1}`;
+        const url = item.url || item.FirstURL || item.Result || "";
+        sources.push({ ...base, type: "web", title, url, snippet: item.snippet || item.Text || "" });
+      });
+      if (!sources.some((source) => source.callIndex === callIndex + 1) && data.query) {
+        sources.push({ ...base, type: "web", title: `Web search: ${data.query}`, url: "", snippet: call.summary || "" });
+      }
+    } else if (["fetch_url", "extract_webpage_content", "expand_search_result", "parse_json_api", "download_file"].includes(tool)) {
+      const url = data.url || data.source_url || "";
+      if (url) sources.push({ ...base, type: "web", title: url, url, snippet: call.summary || "" });
+    } else if (["weather_lookup", "latest_linux_kernel"].includes(tool)) {
+      sources.push({ ...base, type: "web", title: tool === "weather_lookup" ? "Weather API" : "kernel.org releases", url: tool === "weather_lookup" ? "https://open-meteo.com/" : "https://www.kernel.org/releases.json", snippet: call.summary || "" });
+    } else if (tool === "library_search") {
+      (data.results || []).forEach((item) => {
+        sources.push({ ...base, type: item.type === "zim" ? "kiwix" : "library", title: item.title || item.id || "Library item", url: item.path || "", snippet: item.snippet || "", raw: item });
+      });
+    } else if (tool === "library_read_epub" || tool === "library_read_zim") {
+      sources.push({ ...base, type: tool === "library_read_zim" ? "kiwix" : "library", title: data.title || data.id || tool, url: data.path || data.source || "", snippet: call.summary || "", raw: data });
+    } else if (["read_file", "file_search", "content_search", "grep_search", "tree_view", "list_directory", "get_file_info"].includes(tool)) {
+      const matches = Array.isArray(data.matches) ? data.matches : [];
+      if (matches.length) {
+        matches.slice(0, 25).forEach((item) => {
+          if (typeof item === "string") sources.push({ ...base, type: "file", title: item, url: item, snippet: "" });
+          else sources.push({ ...base, type: "file", title: item.path || "Workspace file", url: item.path || "", snippet: item.line ? `Line ${item.line}: ${item.text || ""}` : item.text || "", raw: item });
+        });
+      } else if (data.path) {
+        sources.push({ ...base, type: "file", title: data.path, url: data.path, snippet: call.summary || "" });
+      }
+    } else if (tool === "query_index" || tool === "list_indexed_sources") {
+      const labels = [...String(call.summary || "").matchAll(/^Source:\s*(.+)$/gm)].map((match) => match[1]);
+      if (labels.length) labels.forEach((label) => sources.push({ ...base, type: "index", title: label, url: label, snippet: "" }));
+      else sources.push({ ...base, type: "index", title: "Local index", url: data.path || "", snippet: call.summary || "" });
+    }
+  });
+  return sources;
+}
+
+function openSourcesDetail(message) {
+  const sources = collectSources(message);
+  const groups = ["web", "library", "kiwix", "file", "index"]
+    .map((type) => ({ type, items: sources.filter((source) => source.type === type) }))
+    .filter((group) => group.items.length);
+  if (!groups.length) return openMessageDetail(message);
+  const first = groups[0].type;
+  const tabs = groups.map((group) => `<button class="source-tab ${group.type === first ? "active" : ""}" data-source-tab="${group.type}">${escapeHtml(group.type)} (${group.items.length})</button>`).join("");
+  const panels = groups.map((group) => `
+    <div class="source-panel ${group.type === first ? "active" : ""}" data-source-panel="${group.type}">
+      ${group.items.map((source, index) => `
+        <section class="source-card">
+          <div><strong>${escapeHtml(source.title || `${group.type} source ${index + 1}`)}</strong><span>${escapeHtml(source.tool)} call ${source.callIndex}</span></div>
+          ${source.url ? `<code>${escapeHtml(source.url)}</code>` : ""}
+          ${source.snippet ? `<pre>${escapeHtml(String(source.snippet).slice(0, 1800))}</pre>` : ""}
+        </section>`).join("")}
+    </div>`).join("");
+  openDetailModal({
+    eyebrow: "Sources",
+    title: `${sources.length} source${sources.length === 1 ? "" : "s"}`,
+    html: `<div class="source-tabs">${tabs}</div>${panels}<h3>Raw sources</h3>${jsonBlock(sources)}`,
+    payload: sources
+  });
+  bindSourceTabs();
+}
+
+function bindSourceTabs() {
+  document.querySelectorAll(".source-tab").forEach((button) => {
+    button.addEventListener("click", () => {
+      const type = button.dataset.sourceTab;
+      document.querySelectorAll(".source-tab").forEach((candidate) => candidate.classList.toggle("active", candidate === button));
+      document.querySelectorAll(".source-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.sourcePanel === type));
+    });
+  });
+}
+
 function scrollChat() {
   if ($("autoScrollToggle").checked) chatLog.scrollTop = chatLog.scrollHeight;
 }
@@ -565,10 +1175,12 @@ async function loadModels() {
     const data = await res.json();
     liveModels = Array.isArray(data.models) ? data.models : [];
     state.models = liveModels;
+    state.modelsOk = Boolean(data.ok);
     $("modelStatus").textContent = data.ok ? `${liveModels.length} local` : "offline";
     $("modelStatus").className = `status-pill ${data.ok ? "ok" : "bad"}`;
     if (!data.ok && data.error) renderModelMeta(`Ollama models could not be loaded: ${data.error}`);
   } catch (error) {
+    state.modelsOk = false;
     $("modelStatus").textContent = "offline";
     $("modelStatus").className = "status-pill bad";
     renderModelMeta(`Model endpoint unavailable: ${error.message}`);
@@ -597,6 +1209,7 @@ async function loadModels() {
   });
   select.appendChild(group);
   updateModelMeta();
+  renderRuntimeStatus();
 }
 
 function renderModelMeta(message = "") {
@@ -614,14 +1227,12 @@ function updateModelMeta() {
   const live = state.models.find((item) => item.name === value || item.model === value) || null;
   const root = $("modelMeta");
   if (!value) {
-    root.innerHTML = `<div class="model-card clickable-card"><strong>Auto route</strong><span>UI previews the likely profile from your prompt, then leaves server-side routing alone unless you pick a model.</span></div>`;
+    root.innerHTML = `<div class="model-card clickable-card"><strong>Auto route</strong><span>Server picks per request.</span></div>`;
   } else {
     root.innerHTML = `
       <div class="model-card clickable-card">
         <strong>${escapeHtml(value)}</strong>
-        <span>${escapeHtml(profile?.summary || "Local Ollama model")}</span>
-        <span>${escapeHtml(profile?.job || live?.details?.family || "")}</span>
-        <span>${live?.size ? escapeHtml(prettyBytes(live.size)) : "Not found in live Ollama tags yet"}</span>
+        <span>${escapeHtml(profile?.category || live?.details?.family || "local model")}${live?.size ? ` · ${escapeHtml(prettyBytes(live.size))}` : ""}</span>
       </div>`;
   }
   root.querySelector(".model-card")?.addEventListener("click", () => openModelDetail(value));
@@ -657,13 +1268,17 @@ async function loadTools() {
     const data = await res.json();
     state.tools = Array.isArray(data.tools) ? data.tools : [];
     state.toolCards = Array.isArray(data.tool_cards) ? data.tool_cards : state.tools.map((tool) => ({ id: tool }));
-  } catch {
+    state.toolsError = "";
+  } catch (error) {
+    state.toolsError = error.message;
     state.tools = Object.keys(TOOL_EXAMPLES);
     state.toolCards = state.tools.map((tool) => ({ id: tool }));
   }
   if (!state.tools.length) state.tools = Object.keys(TOOL_EXAMPLES);
   if (!state.toolCards.length) state.toolCards = state.tools.map((tool) => ({ id: tool }));
   renderTools();
+  renderToolPresets();
+  renderRuntimeStatus();
   renderSidebarOverview();
 }
 
@@ -688,6 +1303,9 @@ function renderTools() {
   $("toolCount").textContent = String(state.tools.length);
   const list = $("toolList");
   list.innerHTML = "";
+  if (state.toolsError) {
+    list.innerHTML = `<div class="tool-item diagnostic-card"><strong>Using fallback tool docs</strong><span>/api/tools failed: ${escapeHtml(state.toolsError)}</span></div>`;
+  }
   state.tools.forEach((tool) => {
     const id = toolId(tool);
     const doc = { ...(TOOL_DOCS[id] || {}), ...toolCardFor(id) };
@@ -702,6 +1320,26 @@ function renderTools() {
     list.appendChild(item);
   });
   updateToolExample();
+}
+
+function renderToolPresets() {
+  const root = $("toolPresetGrid");
+  if (!root) return;
+  root.innerHTML = TOOL_PRESETS.map((preset) => `<button class="chip-button" data-tool-preset="${escapeHtml(preset.id)}">${escapeHtml(preset.label)}</button>`).join("");
+  root.querySelectorAll("[data-tool-preset]").forEach((button) => {
+    button.addEventListener("click", () => applyToolPreset(button.dataset.toolPreset));
+  });
+}
+
+function applyToolPreset(presetId) {
+  const preset = TOOL_PRESETS.find((candidate) => candidate.id === presetId);
+  if (!preset) return;
+  const select = $("toolSelect");
+  if ([...select.options].some((option) => option.value === preset.tool)) {
+    select.value = preset.tool;
+  }
+  $("toolArgs").value = JSON.stringify(preset.args, null, 2);
+  $("toolResult").innerHTML = `<span>Preset loaded: ${escapeHtml(preset.label)}. Review arguments, then run.</span>`;
 }
 
 function updateToolExample() {
@@ -728,8 +1366,10 @@ async function loadAdapters() {
       root.appendChild(item);
     });
     renderSidebarOverview();
+    renderRuntimeStatus();
   } catch (error) {
-    root.innerHTML = `<div class="adapter-item clickable-card"><span>${escapeHtml(error.message)}</span></div>`;
+    root.innerHTML = `<div class="adapter-item clickable-card diagnostic-card"><strong>No adapters loaded</strong><span>${escapeHtml(error.message)}. Check TOOLING_SHOWCASE_PORTFOLIO or expected sibling project paths.</span></div>`;
+    renderRuntimeStatus();
   }
 }
 
@@ -746,6 +1386,7 @@ async function loadJournal() {
       root.innerHTML = `<div class="journal-item clickable-card"><span>No events yet.</span></div>`;
       root.firstElementChild?.addEventListener("click", () => openJournalSummaryDetail());
       renderSidebarOverview();
+      renderRuntimeStatus();
       return;
     }
     state.journal.slice(0, state.settings.journalLimit || 50).forEach((event, index) => {
@@ -768,8 +1409,10 @@ async function loadJournal() {
       root.appendChild(item);
     });
     renderSidebarOverview();
+    renderRuntimeStatus();
   } catch (error) {
-    root.innerHTML = `<div class="journal-item"><span>${escapeHtml(error.message)}</span></div>`;
+    root.innerHTML = `<div class="journal-item diagnostic-card"><strong>Journal unavailable</strong><span>${escapeHtml(error.message)}. Send a message or check the backend journal path.</span></div>`;
+    renderRuntimeStatus();
   }
 }
 
@@ -828,11 +1471,31 @@ async function deleteJournalEntry(event, index) {
 }
 
 function buildSystemPrompt() {
-  const base = $("systemPromptInput").value.trim();
-  if (!$("memoryToggle").checked || !state.memories.length) return base || null;
-  const memories = state.memories.map((memory, index) => `${index + 1}. ${memory.title ? `${memory.title}: ` : ""}${memory.text}`).join("\n");
-  const heading = state.settings.memoryPrefix || DEFAULT_SETTINGS.memoryPrefix;
-  return `${base ? `${base}\n\n` : ""}${heading}:\n${memories}`;
+  const prompt = activeSystemPrompt();
+  const parts = [];
+  if (prompt?.fullPrompt?.trim()) parts.push(prompt.fullPrompt.trim());
+  if (prompt?.context?.trim()) parts.push(`Prompt context:\n${prompt.context.trim()}`);
+  const legacy = $("systemPromptInput").value.trim();
+  if (!prompt && legacy) parts.push(legacy);
+
+  if ($("memoryToggle").checked && profileHasContent()) {
+    const profileLines = [
+      state.profile.name ? `Name: ${state.profile.name}` : "",
+      state.profile.nickname ? `Nickname: ${state.profile.nickname}` : "",
+      state.profile.about ? `About: ${state.profile.about}` : "",
+      state.profile.preferences ? `User preferences: ${state.profile.preferences}` : "",
+      state.profile.other ? `Other information: ${state.profile.other}` : ""
+    ].filter(Boolean).join("\n");
+    if (profileLines) parts.push(`${state.settings.profilePrefix || DEFAULT_SETTINGS.profilePrefix}:\n${profileLines}`);
+  }
+
+  if ($("memoryToggle").checked && state.memories.length) {
+    const memories = state.memories.map((memory, index) => `${index + 1}. ${memory.title ? `${memory.title}: ` : ""}${memory.text}`).join("\n");
+    const heading = state.settings.memoryPrefix || DEFAULT_SETTINGS.memoryPrefix;
+    parts.push(`${heading}:\n${memories}`);
+  }
+
+  return parts.filter(Boolean).join("\n\n") || null;
 }
 
 function buildModelOptions() {
@@ -867,22 +1530,49 @@ async function sendMessage() {
   const input = $("promptInput");
   const text = input.value.trim();
   if (!text) return;
-  state.busy = true;
-  const started = performance.now();
   input.value = "";
   const modelOptions = buildModelOptions();
   const userMessage = addSessionMessage("user", text, { model: $("modelSelect").value || "auto" });
   chatLog.querySelector(".empty-state")?.remove();
   renderMessage(userMessage);
-  const assistantMessage = addSessionMessage("assistant", "", { thinking: "", toolCalls: [], model: $("modelSelect").value || "auto", options: modelOptions });
+  const assistantMessage = addSessionMessage("assistant", "", { thinking: "", toolCalls: [], model: $("modelSelect").value || "auto", options: modelOptions, requestText: text, parentUserMessageId: userMessage.id });
   const assistantNode = renderMessage(assistantMessage);
   scrollChat();
+  await requestAssistantResponse({ userText: text, requestText: text, assistantMessage, assistantNode });
+}
+
+async function requestAssistantResponse({ userText, requestText, assistantMessage, assistantNode = null, modelOverride = null, retryMeta = null }) {
+  if (state.busy) return;
+  state.busy = true;
+  const started = performance.now();
+  const modelOptions = buildModelOptions();
+  const selectedModel = modelOverride !== null ? modelOverride : ($("modelSelect").value || null);
+  patchActiveMessageVariant(assistantMessage, {
+    content: "",
+    thinking: "",
+    toolCalls: [],
+    ok: true,
+    model: selectedModel || "auto",
+    options: modelOptions,
+    modelRoute: null,
+    latencyMs: null,
+    requestText: requestText || userText,
+    retryMeta
+  });
+  if (!assistantNode || !assistantNode.isConnected) {
+    renderChat();
+    assistantNode = chatLog.querySelector(`[data-message-id="${assistantMessage.id}"]`);
+  }
+  if (!assistantNode) {
+    state.busy = false;
+    return;
+  }
   const contentNode = assistantNode.querySelector(".message-content");
   const payload = {
-    text,
+    text: requestText || userText,
     confirm: $("confirmToggle").checked,
     stream: $("streamToggle").checked,
-    model: $("modelSelect").value || null,
+    model: selectedModel || null,
     system_prompt: buildSystemPrompt(),
     options: modelOptions,
     response_format: buildResponseFormat()
@@ -903,45 +1593,58 @@ async function sendMessage() {
     if (payload.stream && res.headers.get("content-type")?.includes("ndjson")) {
       await readNdjsonStream(res, (chunk) => {
         if (chunk.type === "content_delta") {
-          assistantMessage.content += chunk.delta || "";
-          contentNode.textContent = assistantMessage.content;
+          patchActiveMessageVariant(assistantMessage, { content: `${assistantMessage.content || ""}${chunk.delta || ""}` });
+          renderMessageContent(contentNode, assistantMessage);
         } else if (chunk.type === "thinking_delta") {
-          assistantMessage.thinking += chunk.delta || "";
+          patchActiveMessageVariant(assistantMessage, { thinking: `${assistantMessage.thinking || ""}${chunk.delta || ""}` });
           renderActivityBox(assistantNode, assistantMessage);
         } else if (chunk.type === "tool_calls") {
-          assistantMessage.toolCalls = chunk.tool_calls || [];
+          patchActiveMessageVariant(assistantMessage, { toolCalls: chunk.tool_calls || [] });
           renderActivityBox(assistantNode, assistantMessage);
+          renderMessageActions(assistantNode, assistantMessage);
         } else if (chunk.type === "final") {
-          assistantMessage.ok = Boolean(chunk.ok);
-          assistantMessage.toolCalls = chunk.tool_calls || [];
-          assistantMessage.model = chunk.data?.model || assistantMessage.model;
-          assistantMessage.modelRoute = chunk.data?.model_route || null;
-          if (!assistantMessage.content.trim()) assistantMessage.content = stripThinkTags(chunk.message || "");
-          if (!assistantMessage.thinking.trim()) assistantMessage.thinking = chunk.thinking || extractThinkText(chunk.message || "");
-          contentNode.textContent = assistantMessage.content;
+          const content = assistantMessage.content.trim() ? assistantMessage.content : stripThinkTags(chunk.message || "");
+          const thinking = assistantMessage.thinking.trim() ? assistantMessage.thinking : (chunk.thinking || extractThinkText(chunk.message || ""));
+          patchActiveMessageVariant(assistantMessage, {
+            ok: Boolean(chunk.ok),
+            content,
+            thinking,
+            toolCalls: chunk.tool_calls || [],
+            model: chunk.data?.model || assistantMessage.model,
+            modelRoute: chunk.data?.model_route || null
+          });
+          assistantNode.classList.toggle("failed", assistantMessage.ok === false);
+          renderMessageContent(contentNode, assistantMessage);
           renderActivityBox(assistantNode, assistantMessage);
+          renderMessageActions(assistantNode, assistantMessage);
         }
         scrollChat();
       });
     } else {
       const data = await res.json();
-      assistantMessage.ok = Boolean(data.ok);
-      assistantMessage.content = stripThinkTags(data.message || "");
-      assistantMessage.thinking = data.thinking || extractThinkText(data.message || "");
-      assistantMessage.toolCalls = data.tool_calls || [];
-      assistantMessage.model = data.data?.model || assistantMessage.model;
-      assistantMessage.modelRoute = data.data?.model_route || null;
-      contentNode.textContent = assistantMessage.content;
+      patchActiveMessageVariant(assistantMessage, {
+        ok: Boolean(data.ok),
+        content: stripThinkTags(data.message || ""),
+        thinking: data.thinking || extractThinkText(data.message || ""),
+        toolCalls: data.tool_calls || [],
+        model: data.data?.model || assistantMessage.model,
+        modelRoute: data.data?.model_route || null
+      });
+      assistantNode.classList.toggle("failed", assistantMessage.ok === false);
+      renderMessageContent(contentNode, assistantMessage);
       renderActivityBox(assistantNode, assistantMessage);
+      renderMessageActions(assistantNode, assistantMessage);
     }
   } catch (error) {
-    assistantMessage.ok = false;
-    assistantMessage.content = error.name === "AbortError" ? "Request stopped." : `Request failed: ${error.message}`;
-    contentNode.textContent = assistantMessage.content;
+    patchActiveMessageVariant(assistantMessage, {
+      ok: false,
+      content: error.name === "AbortError" ? "Request stopped." : `Request failed: ${error.message}`
+    });
+    assistantNode.classList.toggle("failed", true);
+    renderMessageContent(contentNode, assistantMessage);
+    renderMessageActions(assistantNode, assistantMessage);
   } finally {
-    assistantMessage.latencyMs = Math.round(performance.now() - started);
-    const sessionMessage = activeSession().messages.find((msg) => msg.id === assistantMessage.id);
-    Object.assign(sessionMessage, assistantMessage);
+    patchActiveMessageVariant(assistantMessage, { latencyMs: Math.round(performance.now() - started) });
     persist();
     state.busy = false;
     state.lastController = null;
@@ -951,6 +1654,158 @@ async function sendMessage() {
     await loadJournal();
     scrollChat();
   }
+}
+
+function startUserMessageEdit(messageId) {
+  if (state.busy) return;
+  state.editingMessageId = messageId;
+  renderChat();
+}
+
+async function finishUserMessageEdit(messageId, nextText) {
+  if (state.busy) return;
+  const session = activeSession();
+  const message = session?.messages?.find((candidate) => candidate.id === messageId);
+  const text = String(nextText || "").trim();
+  if (!message || !text) return;
+  state.editingMessageId = null;
+  addMessageVariant(message, {
+    content: text,
+    thinking: "",
+    toolCalls: [],
+    ok: true,
+    model: $("modelSelect").value || "auto",
+    requestText: text,
+    editMeta: { editedAt: new Date().toISOString(), sourceVariant: message.variants.length }
+  });
+  let assistantMessage = findPairedAssistantMessage(message.id);
+  if (!assistantMessage) {
+    const userIndex = messageIndex(message.id);
+    assistantMessage = {
+      id: uid("msg"),
+      role: "assistant",
+      parentUserMessageId: message.id,
+      activeVariant: 0,
+      variants: [],
+      content: "",
+      thinking: "",
+      toolCalls: [],
+      createdAt: new Date().toISOString(),
+      ok: true,
+      model: $("modelSelect").value || "auto",
+      options: buildModelOptions(),
+      modelRoute: null,
+      latencyMs: null,
+      requestText: text
+    };
+    assistantMessage.variants = [makeMessageVariant(assistantMessage, { requestText: text })];
+    session.messages.splice(Math.max(0, userIndex + 1), 0, assistantMessage);
+  } else {
+    addMessageVariant(assistantMessage, {
+      content: "",
+      thinking: "",
+      toolCalls: [],
+      ok: true,
+      model: $("modelSelect").value || "auto",
+      options: buildModelOptions(),
+      requestText: text,
+      editMeta: { userMessageId: message.id, editedAt: new Date().toISOString() }
+    });
+  }
+  persist();
+  renderChat();
+  const assistantNode = chatLog.querySelector(`[data-message-id="${assistantMessage.id}"]`);
+  await requestAssistantResponse({ userText: text, requestText: text, assistantMessage, assistantNode });
+}
+
+function openRetryDialog(message) {
+  if (state.busy) return;
+  state.retryMessageId = message.id;
+  populateRetryModelSelect(message.model || $("modelSelect").value || "");
+  $("retryStyleSelect").value = message.ok === false ? "debug" : "same";
+  $("retryExtraInput").value = "";
+  const user = findPreviousUserMessage(message.id);
+  $("retryContextPreview").textContent = [
+    `Previous user message:\n${user?.content || "(not found)"}`,
+    `Previous assistant message:\n${message.content || "(empty)"}`
+  ].join("\n\n");
+  $("retryDialog").hidden = false;
+  $("retryExtraInput").focus();
+}
+
+function closeRetryDialog() {
+  state.retryMessageId = null;
+  $("retryDialog").hidden = true;
+}
+
+function populateRetryModelSelect(currentModel) {
+  const select = $("retryModelSelect");
+  select.innerHTML = '<option value="">Auto route / current default</option>';
+  const seen = new Set();
+  state.models.forEach((model) => {
+    const name = model.name || model.model;
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = `${name}${model.size ? ` - ${prettyBytes(model.size)}` : ""}`;
+    select.appendChild(option);
+  });
+  MODEL_PROFILES.filter((profile) => profile.chat_capable && !seen.has(profile.model)).forEach((profile) => {
+    const option = document.createElement("option");
+    option.value = profile.model;
+    option.textContent = `${profile.model} - ${profile.category}`;
+    select.appendChild(option);
+  });
+  select.value = currentModel && currentModel !== "auto" ? currentModel : "";
+}
+
+function buildRetryPrompt(userText, previousAssistantText, style, extraInput) {
+  const styleMap = {
+    same: "Regenerate the answer with the same intent, correcting any issues.",
+    more_detail: "Regenerate with more detail, clearer reasoning, and fuller coverage.",
+    concise: "Regenerate more concisely while preserving the important answer.",
+    debug: "Debug the failed response, explain what went wrong if relevant, and provide a corrected answer.",
+    creative: "Regenerate using a meaningfully different approach or framing."
+  };
+  return [
+    userText,
+    "",
+    "Retry instructions:",
+    styleMap[style] || styleMap.same,
+    extraInput ? `Additional user input: ${extraInput}` : "",
+    "",
+    "Previous assistant response for context:",
+    previousAssistantText || "(empty previous response)"
+  ].filter((part) => part !== "").join("\n");
+}
+
+async function runRetryFromDialog() {
+  const session = activeSession();
+  const message = session?.messages?.find((candidate) => candidate.id === state.retryMessageId);
+  if (!message || state.busy) return;
+  const user = findPreviousUserMessage(message.id);
+  if (!user) return;
+  const previousAssistant = message.content || "";
+  const style = $("retryStyleSelect").value;
+  const extra = $("retryExtraInput").value.trim();
+  const modelOverride = $("retryModelSelect").value || null;
+  const requestText = buildRetryPrompt(user.content || "", previousAssistant, style, extra);
+  addMessageVariant(message, {
+    content: "",
+    thinking: "",
+    toolCalls: [],
+    ok: true,
+    model: modelOverride || message.model || "auto",
+    options: buildModelOptions(),
+    requestText,
+    retryMeta: { retriedAt: new Date().toISOString(), style, extra, previousAssistant }
+  });
+  closeRetryDialog();
+  persist();
+  renderChat();
+  const assistantNode = chatLog.querySelector(`[data-message-id="${message.id}"]`);
+  await requestAssistantResponse({ userText: user.content || "", requestText, assistantMessage: message, assistantNode, modelOverride, retryMeta: { style, extra } });
 }
 
 async function readNdjsonStream(response, onChunk) {
@@ -1086,6 +1941,170 @@ function applySettingsVisuals() {
   document.documentElement.dataset.density = state.settings.density || "comfortable";
   document.documentElement.dataset.compactTools = state.settings.compactTools ? "true" : "false";
   document.documentElement.style.setProperty("--message-max", `${Number(state.settings.messageWidth) || 78}ch`);
+  document.body.classList.toggle("sidebar-collapsed", Boolean(state.settings.sidebarCollapsed));
+  const theme = deepMerge(DEFAULT_SETTINGS.theme, state.settings.theme || {});
+  document.documentElement.style.setProperty("--bg", theme.primary || DEFAULT_SETTINGS.theme.primary);
+  document.documentElement.style.setProperty("--accent", theme.accent || DEFAULT_SETTINGS.theme.accent);
+  document.documentElement.style.setProperty("--accent-2", theme.accentTwo || DEFAULT_SETTINGS.theme.accentTwo);
+  document.documentElement.style.setProperty("--text", theme.text || DEFAULT_SETTINGS.theme.text);
+  document.documentElement.style.setProperty("--panel", hexToRgba(theme.panel || DEFAULT_SETTINGS.theme.panel, 0.74));
+  document.documentElement.style.setProperty("--panel-strong", hexToRgba(theme.panel || DEFAULT_SETTINGS.theme.panel, 0.92));
+  document.documentElement.style.setProperty("--line", hexToRgba(theme.accent || DEFAULT_SETTINGS.theme.accent, 0.13));
+  document.documentElement.style.setProperty("--line-strong", hexToRgba(theme.accent || DEFAULT_SETTINGS.theme.accent, 0.25));
+  document.documentElement.style.setProperty("--font", fontStack(theme.font));
+}
+
+function renderSystemPromptControls() {
+  const select = $("settingsPromptSelect");
+  if (!select) return;
+  select.innerHTML = '<option value="">No system prompt</option>';
+  state.systemPrompts.forEach((prompt) => {
+    const option = document.createElement("option");
+    option.value = prompt.id;
+    option.textContent = prompt.title || "Untitled prompt";
+    select.appendChild(option);
+  });
+  select.value = state.activeSystemPromptId || "";
+  renderSystemPromptList();
+  loadSystemPromptEditor(select.value || null);
+}
+
+function renderSystemPromptList() {
+  const root = $("systemPromptList");
+  if (!root) return;
+  if (!state.systemPrompts.length) {
+    root.innerHTML = '<div class="prompt-item"><span>No saved prompts yet.</span></div>';
+    return;
+  }
+  root.innerHTML = state.systemPrompts.map((prompt) => `
+    <button class="prompt-item ${prompt.id === state.activeSystemPromptId ? "active" : ""}" data-prompt-id="${escapeHtml(prompt.id)}">
+      <strong>${escapeHtml(prompt.title || "Untitled prompt")}</strong>
+      <span>${escapeHtml(prompt.shortMessage || "No short message")}</span>
+    </button>`).join("");
+  root.querySelectorAll("[data-prompt-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeSystemPromptId = button.dataset.promptId;
+      $("settingsPromptSelect").value = state.activeSystemPromptId;
+      loadSystemPromptEditor(state.activeSystemPromptId);
+      renderSystemPromptList();
+    });
+  });
+}
+
+function loadSystemPromptEditor(promptId) {
+  const prompt = state.systemPrompts.find((candidate) => candidate.id === promptId) || null;
+  $("systemPromptTitleInput").value = prompt?.title || "";
+  $("systemPromptShortInput").value = prompt?.shortMessage || "";
+  $("systemPromptContextInput").value = prompt?.context || "";
+  $("settingsSystemPromptInput").value = prompt?.fullPrompt || "";
+}
+
+function newSystemPromptDraft() {
+  state.activeSystemPromptId = null;
+  $("settingsPromptSelect").value = "";
+  loadSystemPromptEditor(null);
+  $("systemPromptTitleInput").focus();
+}
+
+function saveSystemPromptFromEditor() {
+  const title = $("systemPromptTitleInput").value.trim() || "Untitled prompt";
+  const payload = {
+    title,
+    shortMessage: $("systemPromptShortInput").value.trim(),
+    context: $("systemPromptContextInput").value.trim(),
+    fullPrompt: $("settingsSystemPromptInput").value.trim(),
+    updatedAt: new Date().toISOString()
+  };
+  let prompt = state.systemPrompts.find((candidate) => candidate.id === state.activeSystemPromptId);
+  if (!prompt) {
+    prompt = { id: uid("prompt"), createdAt: new Date().toISOString(), ...payload };
+    state.systemPrompts.unshift(prompt);
+  } else {
+    Object.assign(prompt, payload);
+  }
+  state.activeSystemPromptId = prompt.id;
+  $("systemPromptInput").value = prompt.fullPrompt || "";
+  persist();
+  renderSystemPromptControls();
+}
+
+function deleteActiveSystemPrompt() {
+  if (!state.activeSystemPromptId) return;
+  state.systemPrompts = state.systemPrompts.filter((prompt) => prompt.id !== state.activeSystemPromptId);
+  state.activeSystemPromptId = state.systemPrompts[0]?.id || null;
+  $("systemPromptInput").value = activeSystemPrompt()?.fullPrompt || "";
+  persist();
+  renderSystemPromptControls();
+}
+
+async function draftSystemPromptFromSettings() {
+  const args = {
+    title: $("systemPromptTitleInput").value.trim(),
+    short_message: $("systemPromptShortInput").value.trim(),
+    context: $("systemPromptContextInput").value.trim(),
+    goal: $("settingsSystemPromptInput").value.trim(),
+    profile: state.profile
+  };
+  $("draftSystemPromptBtn").textContent = "Drafting...";
+  try {
+    const res = await fetch("/api/tool", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tool: "draft_system_prompt", arguments: args, confirm: false })
+    });
+    const data = await res.json();
+    const draft = data.tool_call?.data || {};
+    if (draft.title) $("systemPromptTitleInput").value = draft.title;
+    if (draft.short_message || draft.shortMessage) $("systemPromptShortInput").value = draft.short_message || draft.shortMessage;
+    if (draft.context) $("systemPromptContextInput").value = draft.context;
+    if (draft.full_prompt || draft.fullPrompt) $("settingsSystemPromptInput").value = draft.full_prompt || draft.fullPrompt;
+  } catch (error) {
+    $("settingsSystemPromptInput").value = `${$("settingsSystemPromptInput").value}\n\nDraft failed: ${error.message}`.trim();
+  } finally {
+    $("draftSystemPromptBtn").textContent = "Guided draft";
+  }
+}
+
+function renderProfileMemoryList() {
+  const root = $("profileMemoryList");
+  if (!root) return;
+  if (!state.memories.length) {
+    root.innerHTML = '<div class="memory-item"><span>No memories saved yet.</span></div>';
+    return;
+  }
+  root.innerHTML = state.memories.map((memory) => `<div class="memory-item"><strong>${escapeHtml(memory.title || "Memory")}</strong><span>${escapeHtml(memory.text || "")}</span></div>`).join("");
+}
+
+function updateAvatarPreviews() {
+  const user = $("profileUserAvatarPreview");
+  const assistant = $("profileAssistantAvatarPreview");
+  if (user) {
+    if (state.profile.userAvatar) user.src = state.profile.userAvatar;
+    else user.removeAttribute("src");
+  }
+  if (assistant) {
+    if (state.profile.assistantAvatar) assistant.src = state.profile.assistantAvatar;
+    else assistant.removeAttribute("src");
+  }
+  user?.classList.toggle("empty", !state.profile.userAvatar);
+  assistant?.classList.toggle("empty", !state.profile.assistantAvatar);
+}
+
+function handleAvatarUpload(kind, file) {
+  if (!file) return;
+  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+    openCollectionDetail("Unsupported image", "Use a PNG, JPG, or WebP image for profile icons.", { type: file.type, name: file.name });
+    return;
+  }
+  const reader = new FileReader();
+  reader.addEventListener("load", () => {
+    if (kind === "user") state.profile.userAvatar = String(reader.result || "");
+    else state.profile.assistantAvatar = String(reader.result || "");
+    updateAvatarPreviews();
+    persist();
+    renderChat();
+  });
+  reader.readAsDataURL(file);
 }
 
 function syncSettingsModal() {
@@ -1101,6 +2120,13 @@ function syncSettingsModal() {
   $("settingsCompactToolsToggle").checked = Boolean(state.settings.compactTools);
   $("settingsJournalLimit").value = state.settings.journalLimit || 50;
   $("settingsMessageWidth").value = state.settings.messageWidth || 78;
+  const theme = deepMerge(DEFAULT_SETTINGS.theme, state.settings.theme || {});
+  $("themePrimaryColor").value = theme.primary;
+  $("themeAccentColor").value = theme.accent;
+  $("themeAccentTwoColor").value = theme.accentTwo;
+  $("themePanelColor").value = theme.panel;
+  $("themeTextColor").value = theme.text;
+  $("themeFontSelect").value = theme.font || "system";
   $("settingsMemoryPrefix").value = state.settings.memoryPrefix || DEFAULT_SETTINGS.memoryPrefix;
   $("settingsResponseFormat").value = state.settings.responseFormat || "";
   const opts = state.settings.modelOptions || {};
@@ -1113,7 +2139,14 @@ function syncSettingsModal() {
   $("settingsNumPredict").value = opts.num_predict ?? -1;
   $("settingsKeepAlive").value = opts.keep_alive ?? "";
   $("settingsStopSequences").value = Array.isArray(opts.stop) ? opts.stop.join("\n") : "";
-  $("settingsSystemPromptInput").value = $("systemPromptInput").value;
+  renderSystemPromptControls();
+  $("profileNameInput").value = state.profile.name || "";
+  $("profileNicknameInput").value = state.profile.nickname || "";
+  $("profileAboutInput").value = state.profile.about || "";
+  $("profilePreferencesInput").value = state.profile.preferences || "";
+  $("profileOtherInput").value = state.profile.other || "";
+  updateAvatarPreviews();
+  renderProfileMemoryList();
   renderSettingsMemoryStats();
 }
 
@@ -1148,6 +2181,14 @@ function saveSettings() {
   state.settings.compactTools = $("settingsCompactToolsToggle").checked;
   state.settings.journalLimit = Math.max(5, Number($("settingsJournalLimit").value) || 50);
   state.settings.messageWidth = Math.max(52, Math.min(120, Number($("settingsMessageWidth").value) || 78));
+  state.settings.theme = {
+    primary: $("themePrimaryColor").value || DEFAULT_SETTINGS.theme.primary,
+    accent: $("themeAccentColor").value || DEFAULT_SETTINGS.theme.accent,
+    accentTwo: $("themeAccentTwoColor").value || DEFAULT_SETTINGS.theme.accentTwo,
+    panel: $("themePanelColor").value || DEFAULT_SETTINGS.theme.panel,
+    text: $("themeTextColor").value || DEFAULT_SETTINGS.theme.text,
+    font: $("themeFontSelect").value || DEFAULT_SETTINGS.theme.font
+  };
   state.settings.memoryPrefix = $("settingsMemoryPrefix").value.trim() || DEFAULT_SETTINGS.memoryPrefix;
   state.settings.responseFormat = $("settingsResponseFormat").value;
   state.settings.modelOptions = {
@@ -1161,7 +2202,18 @@ function saveSettings() {
     keep_alive: $("settingsKeepAlive").value.trim(),
     stop: $("settingsStopSequences").value.split("\n").map((line) => line.trim()).filter(Boolean)
   };
-  $("systemPromptInput").value = $("settingsSystemPromptInput").value;
+  state.activeSystemPromptId = $("settingsPromptSelect").value || null;
+  if ($("systemPromptTitleInput").value.trim() || $("settingsSystemPromptInput").value.trim()) saveSystemPromptFromEditor();
+  state.profile = {
+    name: $("profileNameInput").value.trim(),
+    nickname: $("profileNicknameInput").value.trim(),
+    about: $("profileAboutInput").value.trim(),
+    preferences: $("profilePreferencesInput").value.trim(),
+    other: $("profileOtherInput").value.trim(),
+    userAvatar: state.profile.userAvatar || "",
+    assistantAvatar: state.profile.assistantAvatar || ""
+  };
+  $("systemPromptInput").value = activeSystemPrompt()?.fullPrompt || "";
   applySettingsToMainControls();
   updateModelMeta();
   persist();
@@ -1230,7 +2282,9 @@ function openMessageDetail(message) {
     ["Words", wordCount(message.content)],
     ["Approx tokens", roughTokens(message.content)],
     ["Thinking chars", String(message.thinking || "").length],
-    ["Tool calls", (message.toolCalls || []).length]
+    ["Tool calls", (message.toolCalls || []).length],
+    ["Sources", collectSources(message).length],
+    ["Variant", `${(message.activeVariant || 0) + 1} of ${message.variants?.length || 1}`]
   ];
   openDetailModal({
     eyebrow: "Message",
@@ -1390,7 +2444,34 @@ function bindModalChrome() {
   document.querySelectorAll(".settings-tab").forEach((button) => button.addEventListener("click", () => switchSettingsTab(button.dataset.settingsTab)));
   $("settingsClearJournalBtn").addEventListener("click", () => { closeSettings(); requestClearJournal(); });
   $("settingsDeleteAllSessionsBtn")?.addEventListener("click", () => { closeSettings(); requestDeleteAllSessions(); });
+  $("settingsExportActiveBtn")?.addEventListener("click", exportSession);
+  $("settingsClearChatBtn")?.addEventListener("click", () => { closeSettings(); clearActiveSession(); });
   $("settingsExportAllBtn").addEventListener("click", exportAllSessions);
+  $("settingsPromptSelect")?.addEventListener("change", (event) => {
+    state.activeSystemPromptId = event.target.value || null;
+    $("systemPromptInput").value = activeSystemPrompt()?.fullPrompt || "";
+    loadSystemPromptEditor(state.activeSystemPromptId);
+    renderSystemPromptList();
+  });
+  $("newSystemPromptBtn")?.addEventListener("click", newSystemPromptDraft);
+  $("saveSystemPromptBtn")?.addEventListener("click", saveSystemPromptFromEditor);
+  $("deleteSystemPromptBtn")?.addEventListener("click", deleteActiveSystemPrompt);
+  $("draftSystemPromptBtn")?.addEventListener("click", draftSystemPromptFromSettings);
+  $("profileUserAvatarInput")?.addEventListener("change", (event) => handleAvatarUpload("user", event.target.files?.[0]));
+  $("profileAssistantAvatarInput")?.addEventListener("change", (event) => handleAvatarUpload("assistant", event.target.files?.[0]));
+  ["themePrimaryColor", "themeAccentColor", "themeAccentTwoColor", "themePanelColor", "themeTextColor", "themeFontSelect"].forEach((id) => {
+    $(id)?.addEventListener("input", () => {
+      state.settings.theme = {
+        primary: $("themePrimaryColor").value,
+        accent: $("themeAccentColor").value,
+        accentTwo: $("themeAccentTwoColor").value,
+        panel: $("themePanelColor").value,
+        text: $("themeTextColor").value,
+        font: $("themeFontSelect").value
+      };
+      applySettingsVisuals();
+    });
+  });
   $("settingsClearBrowserBtn").addEventListener("click", () => {
     closeSettings();
     openConfirmDialog({
@@ -1404,6 +2485,10 @@ function bindModalChrome() {
   $("confirmActionBtn").addEventListener("click", acceptConfirmDialog);
   $("confirmDialog").addEventListener("click", (event) => { if (event.target.id === "confirmDialog") closeConfirmDialog(); });
   $("settingsModal").addEventListener("click", (event) => { if (event.target.id === "settingsModal") closeSettings(); });
+  $("closeRetryBtn").addEventListener("click", closeRetryDialog);
+  $("cancelRetryBtn").addEventListener("click", closeRetryDialog);
+  $("runRetryBtn").addEventListener("click", runRetryFromDialog);
+  $("retryDialog").addEventListener("click", (event) => { if (event.target.id === "retryDialog") closeRetryDialog(); });
   $("closeDetailBtn").addEventListener("click", closeDetailModal);
   $("detailCloseBtn").addEventListener("click", closeDetailModal);
   $("detailModal").addEventListener("click", (event) => { if (event.target.id === "detailModal") closeDetailModal(); });
@@ -1413,6 +2498,7 @@ function bindModalChrome() {
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     if (!$("confirmDialog").hidden) closeConfirmDialog();
+    else if (!$("retryDialog").hidden) closeRetryDialog();
     else if (!$("detailModal").hidden) closeDetailModal();
     else if (!$("settingsModal").hidden) closeSettings();
     else closeMobileDrawers();
@@ -1425,7 +2511,7 @@ function exportSession() {
 }
 
 function exportAllSessions() {
-  downloadJson("showcase-ui-sessions.json", { exportedAt: new Date().toISOString(), sessions: state.sessions, memories: state.memories, settings: state.settings });
+  downloadJson("showcase-ui-sessions.json", { exportedAt: new Date().toISOString(), sessions: state.sessions, memories: state.memories, settings: state.settings, systemPrompts: state.systemPrompts, activeSystemPromptId: state.activeSystemPromptId, profile: state.profile });
 }
 
 function downloadJson(filename, payload) {
@@ -1452,6 +2538,9 @@ function clearBrowserState() {
   state.sessions = [];
   state.memories = [];
   state.settings = structuredClone(DEFAULT_SETTINGS);
+  state.systemPrompts = [];
+  state.activeSystemPromptId = null;
+  state.profile = structuredClone(DEFAULT_PROFILE);
   createSession(false);
   applySettingsToMainControls();
   persist();
@@ -1476,7 +2565,9 @@ function bindPanelDetails() {
   $("toolsPanel").addEventListener("dblclick", () => openCollectionDetail("Tools", `${state.tools.length} available tools.`, { tools: state.tools, tool_cards: state.toolCards }));
   $("adaptersPanel").addEventListener("dblclick", () => openCollectionDetail("Adapters", `${state.adapters.length} workspace adapters loaded.`, state.adapters));
   $("journalPanel").addEventListener("dblclick", openJournalSummaryDetail);
+  $("overviewPanel")?.addEventListener("dblclick", () => openCollectionDetail("Overview", "Full local runtime overview.", { readiness: runtimeReadiness(), sessions: state.sessions.length, tools: state.tools.length, adapters: state.adapters.length, journal: state.journalStats }));
   $("composerPanel").addEventListener("dblclick", () => openCollectionDetail("Composer", "Prompt composer details and current request options.", { model: $("modelSelect").value || "auto", options: buildModelOptions(), system_prompt_chars: $("systemPromptInput").value.length }));
+  $("runtimeStatusStrip")?.addEventListener("click", () => openCollectionDetail("Runtime readiness", "Current local runtime health and setup signals.", { readiness: runtimeReadiness(), runtime: state.runtime, models: state.models.length, tools: state.tools.length, adapters: state.adapters.length, journal: state.journalStats }));
 }
 
 
@@ -1524,23 +2615,26 @@ function bindEvents() {
     event.stopPropagation();
     applyStarterPrompt(starter.dataset.preset);
   });
-  $("modelSelect").addEventListener("change", () => { updateModelMeta(); persist(); });
+  $("modelSelect").addEventListener("change", () => { updateModelMeta(); renderRuntimeStatus(); persist(); });
   $("toolSelect").addEventListener("change", updateToolExample);
   $("runToolBtn").addEventListener("click", runManualTool);
   $("runAutonomousBtn").addEventListener("click", runAutonomous);
   $("newSessionBtn").addEventListener("click", () => createSession(true));
+  $("sidebarNewChatBtn")?.addEventListener("click", (event) => { event.stopPropagation(); createSession(true); });
+  $("sidebarSearchBtn")?.addEventListener("click", (event) => { event.stopPropagation(); searchSessions(); });
+  $("recentsToggleBtn")?.addEventListener("click", (event) => { event.stopPropagation(); toggleRecentSessionsPullout(); });
+  $("sidebarCollapseBtn")?.addEventListener("click", (event) => { event.stopPropagation(); toggleSidebarCollapsed(); });
   $("addMemoryBtn").addEventListener("click", addMemory);
-  $("exportBtn").addEventListener("click", exportSession);
-  $("clearBtn").addEventListener("click", clearActiveSession);
+  $("clearBtn")?.addEventListener("click", clearActiveSession);
   $("refreshAdaptersBtn").addEventListener("click", loadAdapters);
   $("refreshJournalBtn").addEventListener("click", loadJournal);
   $("clearJournalBtn").addEventListener("click", requestClearJournal);
-  $("systemPromptBtn").addEventListener("click", () => {
+  $("systemPromptBtn")?.addEventListener("click", () => {
     const box = $("systemPromptInput");
     box.hidden = !box.hidden;
     if (!box.hidden) box.focus();
   });
-  $("densityBtn").addEventListener("click", () => {
+  $("densityBtn")?.addEventListener("click", () => {
     state.settings.density = state.settings.density === "compact" ? "comfortable" : "compact";
     applySettingsToMainControls();
     persist();
@@ -1593,7 +2687,7 @@ async function boot() {
   loadLocalState();
   bindEvents();
   renderAll();
-  await Promise.allSettled([loadModels(), loadTools(), loadAdapters(), loadJournal()]);
+  await Promise.allSettled([loadModels(), loadTools(), loadAdapters(), loadJournal(), loadRuntime()]);
   renderAll();
 }
 

@@ -41,6 +41,13 @@ TOOL_DOCS = {
         "usage": "Use when locating symbols, strings, routes, prompts, or feature code.",
         "example": {"query": "ToolRuntime"},
     },
+    "draft_system_prompt": {
+        "name": "Draft System Prompt",
+        "safety": "read-only suggestion",
+        "summary": "Create a structured system-prompt draft for user review.",
+        "usage": "Use when the user wants guided creation of reusable assistant behavior.",
+        "example": {"title": "Coding assistant", "goal": "concise implementation help"},
+    },
     "file_search": {
         "name": "File Search",
         "safety": "read-only",

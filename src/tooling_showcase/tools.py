@@ -160,6 +160,7 @@ class ToolRuntime:
             "delete_file",
             "delete_from_index",
             "delete_memory",
+            "draft_system_prompt",
             "download_file",
             "encode_decode",
             "env_vars",
@@ -1168,6 +1169,44 @@ class ToolRuntime:
 
     def datetime_now(self) -> ToolCall:
         return ToolCall("datetime_now", True, self._now())
+
+    def draft_system_prompt(
+        self,
+        title: str = "",
+        short_message: str = "",
+        context: str = "",
+        goal: str = "",
+        profile: dict | None = None,
+    ) -> ToolCall:
+        title = title.strip() or "New system prompt"
+        short_message = short_message.strip() or "Reusable assistant behavior"
+        context = context.strip()
+        goal = goal.strip() or short_message
+        profile = profile or {}
+        profile_hint = ""
+        if isinstance(profile, dict):
+            name = str(profile.get("name") or profile.get("nickname") or "").strip()
+            prefs = str(profile.get("preferences") or "").strip()
+            profile_hint = "\n".join(part for part in (f"User: {name}" if name else "", f"Preferences: {prefs}" if prefs else "") if part)
+
+        full_prompt = "\n".join(
+            part
+            for part in (
+                f"You are configured for: {goal}.",
+                "Be direct, practical, and precise. Prefer small correct steps over broad guesses.",
+                "Use tools when they improve correctness, and clearly distinguish verified facts from assumptions.",
+                context and f"Standing context:\n{context}",
+                profile_hint and f"User profile context:\n{profile_hint}",
+            )
+            if part
+        )
+        payload = {
+            "title": title,
+            "short_message": short_message,
+            "context": context,
+            "full_prompt": full_prompt,
+        }
+        return ToolCall("draft_system_prompt", True, json.dumps(payload, indent=2), payload)
 
     def convert_units(self, value: float, from_unit: str, to_unit: str) -> ToolCall:
         factors = {"m": 1.0, "km": 1000.0, "cm": 0.01, "mm": 0.001}
