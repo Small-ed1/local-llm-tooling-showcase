@@ -46,6 +46,15 @@ tooling-showcase benchmark --list-models
 
 If Ollama is running locally, open-ended chat requests can use it automatically. If Ollama is not available, deterministic local tools still work and failed fallback paths stay explicit.
 
+More docs:
+
+- `docs/INSTALL.md` for clean-clone setup and Linux notes.
+- `docs/CONFIG.md` for ports, environment variables, and browser storage keys.
+- `docs/TOOLS.md` for stable planner tools versus experimental runtime tools.
+- `docs/TROUBLESHOOTING.md` for Ollama, benchmark, UI, and state issues.
+- `docs/RELEASE_CHECKLIST.md` for release validation commands.
+- `SAFETY.md` and `SECURITY.md` for local execution boundaries.
+
 ## Web UI
 
 The stdlib web UI includes:
@@ -122,7 +131,7 @@ This project intentionally does not expose the whole machine directly to a model
 - Tool planning only sees the selected schemas in `tool_protocol.py`.
 - Read/search/index tools are marked safe for automatic execution.
 - Memory create/edit/delete/list/load tools are planner-visible for explicit user memory requests.
-- Shell execution is guarded and not planner-safe by default.
+- Shell execution is guarded and not safe for automatic planner execution by default.
 - Risky shell patterns require confirmation, and blocked patterns are rejected.
 - Tool calls are bounded, duplicate tool calls are skipped, and results are journaled.
 - Browser sessions, memories, prompts, avatars, and theme settings are stored locally in browser storage.

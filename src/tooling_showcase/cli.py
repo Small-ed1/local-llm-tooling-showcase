@@ -38,14 +38,22 @@ def build_parser() -> argparse.ArgumentParser:
     tui.add_argument("--workspace", default=None)
 
     serve = sub.add_parser("serve", help="Run the showcase web UI")
-    serve.add_argument("--host", default="0.0.0.0")
+    serve.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind host. Defaults to loopback; pass 0.0.0.0 only when you intentionally want LAN access.",
+    )
     serve.add_argument("--port", type=int, default=8123)
     serve.add_argument("--workspace", default=None)
 
     wrapper = sub.add_parser(
         "serve-ollama", help="Run an Ollama-compatible showcase wrapper"
     )
-    wrapper.add_argument("--host", default="0.0.0.0")
+    wrapper.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind host. Defaults to loopback; pass 0.0.0.0 only when you intentionally want LAN access.",
+    )
     wrapper.add_argument("--port", type=int, default=11436)
     wrapper.add_argument("--workspace", default=None)
     wrapper.add_argument(

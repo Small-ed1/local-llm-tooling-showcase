@@ -32,3 +32,9 @@ def test_settings_button_toggles_modal_visibility():
     assert "function toggleSettings" in app
     assert 'addEventListener("click", toggleSettings)' in app
     assert "Close settings" in app
+
+
+def test_static_ui_records_local_storage_schema_version():
+    app = (ROOT / "src" / "tooling_showcase" / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'schema: "showcase.ui.schema.v1"' in app
+    assert "const LOCAL_STORAGE_SCHEMA_VERSION = 3" in app

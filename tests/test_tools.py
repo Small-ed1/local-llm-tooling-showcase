@@ -8,6 +8,8 @@ import json
 import os
 import subprocess
 
+import pytest
+
 from tooling_showcase.config import OllamaConfig, ShellPolicy, ShowcaseConfig
 from tooling_showcase.models import ToolCall
 from tooling_showcase.tools import ToolRuntime
@@ -504,7 +506,6 @@ def test_tool_stats_tracking_success(tmp_path: Path):
     workspace = tmp_path / "workspace"
     (workspace / "test.txt").write_text("content", encoding="utf-8")
 
-    initial_stats = runtime._load_tool_stats()
     runtime.run_tool("read_file", {"path": "test.txt"})
 
     stats = runtime._load_tool_stats()
@@ -544,6 +545,9 @@ def test_tool_stats_persistence(tmp_path: Path):
 def test_runtime_uses_fallback_state_dir_when_repo_state_files_not_writable(
     tmp_path: Path, monkeypatch
 ):
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root can write chmod-read-only files")
+
     fallback_root = tmp_path / "xdg-state"
     monkeypatch.setenv("XDG_STATE_HOME", str(fallback_root))
 

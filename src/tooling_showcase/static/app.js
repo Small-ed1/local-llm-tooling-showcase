@@ -173,6 +173,7 @@ const PAGE_META = {
 };
 
 const STORAGE_KEYS = {
+  schema: "showcase.ui.schema.v1",
   sessions: "showcase.ui.sessions.v3",
   activeSession: "showcase.ui.activeSession.v3",
   memories: "showcase.ui.memories.v3",
@@ -182,6 +183,8 @@ const STORAGE_KEYS = {
   activeSystemPrompt: "showcase.ui.activeSystemPrompt.v1",
   profile: "showcase.ui.profile.v1"
 };
+
+const LOCAL_STORAGE_SCHEMA_VERSION = 3;
 
 const state = {
   sessions: [],
@@ -509,6 +512,7 @@ function deepMerge(base, override) {
 function persist() {
   syncSettingsFromMainControls();
   state.sessions.forEach((session) => normalizeSessionMessages(session));
+  localStorage.setItem(STORAGE_KEYS.schema, String(LOCAL_STORAGE_SCHEMA_VERSION));
   localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(state.sessions));
   localStorage.setItem(STORAGE_KEYS.activeSession, state.activeSessionId ?? "");
   localStorage.setItem(STORAGE_KEYS.memories, JSON.stringify(state.memories));
@@ -520,6 +524,7 @@ function persist() {
 }
 
 function loadLocalState() {
+  const storedSchema = Number(localStorage.getItem(STORAGE_KEYS.schema) || 0);
   const oldSessions = localStorage.getItem("showcase.ui.sessions.v2");
   const oldActive = localStorage.getItem("showcase.ui.activeSession.v2");
   const oldMemories = localStorage.getItem("showcase.ui.memories.v2");
@@ -540,6 +545,7 @@ function loadLocalState() {
   if (state.activeSystemPromptId && !state.systemPrompts.some((prompt) => prompt.id === state.activeSystemPromptId)) state.activeSystemPromptId = null;
   $("systemPromptInput").value = activeSystemPrompt()?.fullPrompt || legacyPrompt || "";
   state.sessions.forEach((session) => normalizeSessionMessages(session));
+  if (storedSchema !== LOCAL_STORAGE_SCHEMA_VERSION) localStorage.setItem(STORAGE_KEYS.schema, String(LOCAL_STORAGE_SCHEMA_VERSION));
   applySettingsToMainControls();
   if (!state.sessions.length) createSession(false);
   if (!activeSession()) state.activeSessionId = state.sessions[0].id;
@@ -2443,6 +2449,7 @@ function openToolDetail(id) {
       ["Name", doc.name || id],
       ["Safety", doc.safety || "ready"],
       ["Available", state.tools.includes(id) ? "yes" : "from fallback docs"],
+      ["Stability", doc.stability || "experimental"],
       ["Calls in active session", calls.length],
       ["Summary", doc.summary || "No summary available"],
       ["Usage", doc.usage || doc.guidance || "Use from the manual tool selector."]

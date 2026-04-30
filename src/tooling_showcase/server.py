@@ -13,6 +13,7 @@ import json
 import mimetypes
 
 from tooling_showcase.benchmarking import benchmark_profiles, default_benchmark_path, load_benchmark_results
+from tooling_showcase.catalog import tool_stability
 from tooling_showcase.models import ActionResult
 from tooling_showcase.service import ShowcaseService
 
@@ -563,6 +564,7 @@ def _tool_cards(tools: list[str]) -> list[dict]:
         doc.setdefault("safety", "runtime-defined")
         doc.setdefault("example", {})
         doc["id"] = tool
+        doc["stability"] = tool_stability(tool)
         doc["created_at"] = None
         doc["message_count"] = None
         cards.append(doc)

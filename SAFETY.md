@@ -1,0 +1,29 @@
+# Safety Notes
+
+This project is a local-first assistant runtime. It can inspect files, call tools, contact Ollama, and write local state. It is not a sandbox.
+
+## Binding And Network Exposure
+
+- `tooling-showcase serve` and `tooling-showcase serve-ollama` default to `127.0.0.1`.
+- Use `--host 0.0.0.0` only when you intentionally want LAN access.
+- Treat LAN binding as exposing local chat, tool metadata, and runtime endpoints to other devices on the network.
+
+## Tool Boundaries
+
+- The model planner only sees schemas in `src/tooling_showcase/tool_protocol.py`.
+- Adding a method to `ToolRuntime` does not expose it to the planner unless a schema is added.
+- Shell commands are confirmation-gated for risky patterns and blocked for known destructive patterns.
+- File write/delete/git mutation tools exist in the runtime but are not planner-visible by default.
+
+## Memory And State
+
+- Browser sessions, UI memories, profile settings, prompts, and theme choices are stored in browser local storage.
+- Model-created memories persist in `state/memories.json`.
+- Benchmarks persist in `state/model_benchmarks.json`; event logs persist in `state/events.jsonl`.
+- Do not store secrets, credentials, private keys, or sensitive personal data in prompts, memories, benchmark prompts, or examples.
+
+## Before Public Release
+
+- Run `scripts/release-check.sh`.
+- Inspect the release zip for `state/`, `.venv/`, `.ruff_cache/`, personal paths, benchmark outputs, event journals, and temporary transfer artifacts.
+- Verify screenshots do not show secrets, private paths, or private conversations.

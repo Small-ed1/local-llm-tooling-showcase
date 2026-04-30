@@ -4,6 +4,27 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+### Added
+
+- CI workflow for Python install/tests, compile checks, shell syntax checks, and frontend JavaScript syntax checks.
+- Release-facing installation, configuration, tools, troubleshooting, safety, and release-checklist docs.
+- Release checklist script for local validation and tracked-artifact checks.
+
+### Changed
+
+- Web UI and Ollama-compatible wrapper now bind to `127.0.0.1` by default; LAN exposure requires an explicit `--host 0.0.0.0`.
+- Tool metadata now marks planner-visible tools as `stable` and runtime-only tools as `experimental`.
+- Browser local-storage schema is documented and recorded with `showcase.ui.schema.v1`.
+
+## v1.0.0 Planning
+
+Expected breaking changes from the alpha line before `v1.0.0`:
+
+- Browser local-storage keys and session shapes may be consolidated one final time before being treated as stable.
+- Tool names and planner-visible schemas may be narrowed to a documented stable set.
+- Default network binding remains loopback-only; deployments that relied on implicit LAN binding must pass `--host 0.0.0.0` explicitly.
+- Benchmark result formats under `state/model_benchmarks.json` may change while benchmark categories are finalized.
+
 ## v0.1.0-alpha.4 - 2026-04-29
 
 ### Added

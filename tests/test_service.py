@@ -632,8 +632,6 @@ def test_service_autonomous_handles_planning_failure(tmp_path: Path):
     task_path = runtime.task_path
     task_path.parent.mkdir(parents=True, exist_ok=True)
 
-    import json
-
     tasks = {
         "bad-id": {
             "title": "fail",

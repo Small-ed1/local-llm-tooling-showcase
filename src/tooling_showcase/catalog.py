@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from tooling_showcase.tool_protocol import TOOL_SCHEMAS
+
 
 @dataclass(frozen=True, slots=True)
 class ToolDoc:
@@ -21,6 +23,13 @@ class ToolGroup:
     compact: str
     tool_ids: tuple[str, ...]
     keywords: tuple[str, ...]
+
+
+STABLE_TOOL_IDS = frozenset(TOOL_SCHEMAS)
+
+
+def tool_stability(tool_id: str) -> str:
+    return "stable" if tool_id in STABLE_TOOL_IDS else "experimental"
 
 
 TOOL_DOCS: tuple[ToolDoc, ...] = (
