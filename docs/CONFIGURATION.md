@@ -1,10 +1,8 @@
 # Configuration
 
-This page is kept for existing links. The canonical configuration guide is `docs/CONFIGURATION.md`.
-
 ## Hosts And Ports
 
-Both server commands bind to loopback by default.
+Both server commands bind to loopback by default:
 
 ```bash
 tooling-showcase serve --host 127.0.0.1 --port 8123
@@ -35,7 +33,7 @@ tooling-showcase serve-ollama --host 0.0.0.0 --port 11436
 
 ## Browser Local Storage
 
-The UI currently uses schema version `3` and records it at `showcase.ui.schema.v1`.
+The UI records schema version `3` at `showcase.ui.schema.v1`.
 
 Current keys:
 
@@ -49,3 +47,7 @@ Current keys:
 - `showcase.ui.profile.v1`
 
 Legacy `v2` sessions, active session, memories, and system prompt are imported in `loadLocalState()`.
+
+## Health Check
+
+Use `tooling-showcase doctor` after changing paths, installing from a wheel, moving the repo, or disabling Ollama.

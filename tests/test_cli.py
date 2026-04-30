@@ -17,3 +17,12 @@ def test_lan_binding_requires_explicit_host():
     serve = parser.parse_args(["serve", "--host", "0.0.0.0"])
 
     assert serve.host == "0.0.0.0"
+
+
+def test_doctor_command_supports_json_output():
+    parser = build_parser()
+
+    doctor = parser.parse_args(["doctor", "--json"])
+
+    assert doctor.command == "doctor"
+    assert doctor.json is True

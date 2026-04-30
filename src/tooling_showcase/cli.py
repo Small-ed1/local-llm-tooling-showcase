@@ -6,6 +6,7 @@ from pathlib import Path
 
 from tooling_showcase.benchmarking import benchmark_command
 from tooling_showcase.config import load_config
+from tooling_showcase.doctor import run_doctor
 from tooling_showcase.ollama_wrapper import run_ollama_wrapper
 from tooling_showcase.service import ShowcaseService
 from tooling_showcase.server import run_server
@@ -33,6 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--limit-tasks", type=int, default=None, help="Limit task count for a smoke run.")
     benchmark.add_argument("--list-models", action="store_true", help="Print installed and unbenchmarked model inventory.")
     benchmark.add_argument("--shell-summary", action="store_true", help="Print shell-friendly inventory variables for install.sh.")
+
+    doctor = sub.add_parser("doctor", help="Check local install, paths, static assets, and Ollama reachability")
+    doctor.add_argument("--json", action="store_true", help="Print machine-readable doctor output.")
 
     tui = sub.add_parser("tui", help="Run the terminal UI")
     tui.add_argument("--workspace", default=None)
@@ -68,7 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    root = Path(__file__).resolve().parents[2]
+    root = Path.cwd().resolve()
     config = load_config(root)
     if getattr(args, "workspace", None):
         config.workspace_root = Path(args.workspace).resolve()
@@ -105,6 +109,9 @@ def main() -> int:
 
     if args.command == "benchmark":
         return benchmark_command(config, args)
+
+    if args.command == "doctor":
+        return run_doctor(config, json_output=args.json)
 
     if args.command == "tui":
         return run_tui(service)

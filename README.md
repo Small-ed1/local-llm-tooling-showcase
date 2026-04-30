@@ -17,6 +17,14 @@ This is a showcase and starter skeleton, not a hosted SaaS product. It is design
 - Ollama-compatible wrapper so other local clients can talk to the showcase through familiar `/api/chat` and `/api/generate` shapes.
 - Event journal for observing routes, tool calls, responses, and autonomous-run traces.
 
+## Known Limits
+
+- This is a local-first runtime, not a sandbox. Run it only against workspaces you are comfortable exposing to local tools.
+- Ollama-backed open-ended answers, benchmarking, and model-profile derivation require a running local Ollama service.
+- Browser sessions, settings, prompts, avatars, and UI memories live in browser local storage.
+- Backend memories, benchmark profiles, event journals, logs, and tool stats live under ignored `state/` files.
+- The static web UI has no build step; validate browser changes with `node --check src/tooling_showcase/static/app.js` and manual smoke tests.
+
 ## Quick Start
 
 ```bash
@@ -41,6 +49,7 @@ tooling-showcase ask "search content ToolRuntime"
 tooling-showcase ask "show adapters"
 tooling-showcase journal --limit 5
 tooling-showcase models
+tooling-showcase doctor
 tooling-showcase benchmark --list-models
 ```
 
@@ -49,11 +58,14 @@ If Ollama is running locally, open-ended chat requests can use it automatically.
 More docs:
 
 - `docs/INSTALL.md` for clean-clone setup and Linux notes.
-- `docs/CONFIG.md` for ports, environment variables, and browser storage keys.
+- `docs/CONFIGURATION.md` for ports, environment variables, and browser storage keys.
+- `docs/OLLAMA_WRAPPER.md` for wrapper endpoints and curl smoke tests.
 - `docs/TOOLS.md` for stable planner tools versus experimental runtime tools.
+- `docs/BENCHMARKING.md` for local model benchmark behavior.
 - `docs/TROUBLESHOOTING.md` for Ollama, benchmark, UI, and state issues.
 - `docs/RELEASE_CHECKLIST.md` for release validation commands.
-- `SAFETY.md` and `SECURITY.md` for local execution boundaries.
+- `SAFETY.md`, `SAFETY_MODEL.md`, and `SECURITY.md` for local execution boundaries.
+- `CONTRIBUTING.md` for development and release hygiene.
 
 ## Web UI
 
@@ -186,9 +198,9 @@ examples/integrations/hyprland/
 
 ## Release Status
 
-Current release line: `v0.1.0-alpha.4`.
+Current release candidate: `v1.0.0-rc.1`.
 
-This alpha is suitable for local demos, portfolio review, and continued development. It includes the benchmark suite, install flow, memory tools, mobile/sidebar polish, hotlinked sources, and screenshot assets. Expect UI and browser-local data shapes to keep changing before a stable `v1.0.0`.
+The `v1.0.0` line is intended for local demos, portfolio review, and stable local development. The default network binding is loopback-only, the planner-visible tool set is documented, and browser/backend state locations are documented for migration and cleanup.
 
 ## License
 

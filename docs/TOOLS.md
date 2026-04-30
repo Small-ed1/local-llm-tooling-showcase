@@ -2,6 +2,8 @@
 
 Runtime tools live in `ToolRuntime` (`src/tooling_showcase/tools.py`). Planner-visible tools are only the tools with schemas in `src/tooling_showcase/tool_protocol.py`.
 
+`tooling-showcase doctor` is a CLI health check, not a planner-visible runtime tool.
+
 ## Stable Planner Tools
 
 These are the tools exposed by `tool_protocol.py`. `shell_command` is visible but not safe for automatic execution; risky shell commands still require confirmation.

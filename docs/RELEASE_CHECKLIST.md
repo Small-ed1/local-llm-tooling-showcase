@@ -14,7 +14,34 @@ git diff --check
 node --check src/tooling_showcase/static/app.js
 python -m compileall -q src tests
 bash -n install.sh && bash -n start-servers.sh
+tooling-showcase doctor
+python -m ruff check src tests
 pytest tests/
+```
+
+Wheel check:
+
+```bash
+python -m build --wheel
+python -m venv /tmp/showcase-wheel-venv
+. /tmp/showcase-wheel-venv/bin/activate
+python -m pip install dist/local_llm_tooling_showcase-*.whl
+tooling-showcase doctor
+```
+
+Smoke checks:
+
+```bash
+tooling-showcase ask "find file README"
+TOOLING_SHOWCASE_OLLAMA_ENABLED=false tooling-showcase ask "find file README"
+tooling-showcase benchmark --list-models
+```
+
+Wrapper curl check:
+
+```bash
+tooling-showcase serve-ollama --host 127.0.0.1 --port 11436
+curl -s http://127.0.0.1:11436/api/tags
 ```
 
 Optional lint check after installing `.[dev]`:
@@ -36,4 +63,4 @@ Inspect the archive for:
 - no `state/`, `.venv/`, `.ruff_cache/`, benchmark outputs, event journals, logs, or personal paths
 - no temporary transfer artifacts such as `showcase_ui_bundle/`, `model_live_note.txt`, `add_library_tools.py`, or `showcase_static_ui_patch.zip`
 
-Before `v1.0.0`, document breaking changes from alpha in `CHANGELOG.md`.
+For `v1.0.0`, keep breaking changes and migration notes in `CHANGELOG.md`.

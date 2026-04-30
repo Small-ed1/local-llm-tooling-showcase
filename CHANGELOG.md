@@ -4,26 +4,35 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+## v1.0.0 - 2026-04-30
+
 ### Added
 
 - CI workflow for Python install/tests, compile checks, shell syntax checks, and frontend JavaScript syntax checks.
-- Release-facing installation, configuration, tools, troubleshooting, safety, and release-checklist docs.
-- Release checklist script for local validation and tracked-artifact checks.
+- `tooling-showcase doctor` for install, path, static asset, state, Node, and Ollama reachability checks.
+- Release-facing installation, configuration, wrapper, tools, benchmarking, troubleshooting, safety-model, contributing, and release-checklist docs.
+- Release checklist script for local validation, lint, doctor, tests, and tracked-artifact checks.
 
 ### Changed
 
 - Web UI and Ollama-compatible wrapper now bind to `127.0.0.1` by default; LAN exposure requires an explicit `--host 0.0.0.0`.
 - Tool metadata now marks planner-visible tools as `stable` and runtime-only tools as `experimental`.
 - Browser local-storage schema is documented and recorded with `showcase.ui.schema.v1`.
+- Package version is promoted from the alpha line to `1.0.0`.
 
-## v1.0.0 Planning
+### Breaking Changes
 
-Expected breaking changes from the alpha line before `v1.0.0`:
+- `tooling-showcase serve` and `tooling-showcase serve-ollama` no longer bind to all interfaces by default. Use `--host 0.0.0.0` only for intentional LAN exposure.
+- The documented stable tool contract is the planner-visible schema set in `tool_protocol.py`; runtime-only tools should be treated as experimental.
+- Browser local-storage schema is versioned at `showcase.ui.schema.v1` with current schema version `3`.
+- Release validation now expects Node for the static JavaScript syntax check and Python build tooling for wheel verification.
 
-- Browser local-storage keys and session shapes may be consolidated one final time before being treated as stable.
-- Tool names and planner-visible schemas may be narrowed to a documented stable set.
-- Default network binding remains loopback-only; deployments that relied on implicit LAN binding must pass `--host 0.0.0.0` explicitly.
-- Benchmark result formats under `state/model_benchmarks.json` may change while benchmark categories are finalized.
+### Migration Notes
+
+- Replace implicit LAN startup commands with `tooling-showcase serve --host 0.0.0.0` or `tooling-showcase serve-ollama --host 0.0.0.0` when LAN access is required.
+- Run `tooling-showcase doctor` after upgrading to verify paths, static assets, local state, and optional Ollama reachability.
+- Browser data from the `v2` UI keys is imported by `loadLocalState()` into the current `v3` keys.
+- Keep ignored `state/` data out of release archives; benchmark profiles and memories can be copied intentionally if you need to preserve local behavior.
 
 ## v0.1.0-alpha.4 - 2026-04-29
 

@@ -8,10 +8,11 @@ node --check src/tooling_showcase/static/app.js
 python -m compileall -q src tests
 bash -n install.sh
 bash -n start-servers.sh
+PYTHONPATH=src python -m tooling_showcase.cli doctor
 pytest tests/
 
 if python -m ruff --version >/dev/null 2>&1; then
-  echo "ruff available; run 'python -m ruff check src tests' for advisory lint."
+  python -m ruff check src tests
 else
   echo "ruff not installed; install with pip install -e '.[dev]' to run lint locally."
 fi
