@@ -25,7 +25,7 @@ This is a showcase and starter skeleton, not a hosted SaaS product. It is design
 - Backend memories, benchmark profiles, event journals, logs, and tool stats live under ignored `state/` files.
 - The static web UI has no build step; validate browser changes with `node --check src/tooling_showcase/static/app.js` and manual smoke tests.
 
-## Quick Start
+## Linux Quick Start
 
 ```bash
 git clone https://github.com/Small-ed1/local-llm-tooling-showcase.git
@@ -38,6 +38,48 @@ Open the web UI at:
 
 ```text
 http://127.0.0.1:8123
+```
+
+### Windows Quick Start
+
+Windows uses PowerShell and needs one extra compatibility package because Python’s built-in `curses` module is not available by default on Windows.
+
+If you are on Windows, use the included PowerShell installer:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
+```
+
+Then open the web UI at:
+
+```text
+http://127.0.0.1:8123
+```
+
+Manual Windows setup:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+python -m pip install --upgrade pip
+python -m pip install windows-curses pytest
+python -m pip install -e .
+
+tooling-showcase serve
+```
+
+Windows notes:
+
+- Use `.\install-windows.ps1` on Windows.
+- Do not use `./install.sh` in PowerShell. That script is for Unix-like shells.
+- Use `.\.venv\Scripts\Activate.ps1` instead of `.venv/bin/activate`.
+- Ollama should be installed and running separately if you want model-backed responses.
+- If you see `ModuleNotFoundError: No module named '_curses'`, install the Windows compatibility package inside the virtual environment:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pip install windows-curses
 ```
 
 Useful CLI checks:
