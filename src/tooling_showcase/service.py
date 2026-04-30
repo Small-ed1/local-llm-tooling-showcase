@@ -46,6 +46,8 @@ class ShowcaseService:
         allow_tools: bool = True,
         max_tool_calls: int = 4,
         show_tool_traces: bool = False,
+        ollama_timeout_seconds: int | None = None,
+        tool_timeout_seconds: int | None = None,
     ) -> ActionResult:
         """
         Chat-first request handler.
@@ -81,6 +83,7 @@ class ShowcaseService:
                 model=selected_model,
                 model_route=model_route_data,
                 available_tools=available_tools,
+                tool_timeout_seconds=tool_timeout_seconds,
             )
             if direct is not None:
                 self._log_chat(
@@ -94,7 +97,7 @@ class ShowcaseService:
                 return direct
 
         if allow_tools and not self.config.ollama.enabled:
-            legacy = self._legacy_direct_tool_fallback(text, confirm=confirm)
+            legacy = self._legacy_direct_tool_fallback(text, confirm=confirm, tool_timeout_seconds=tool_timeout_seconds)
             if legacy is not None:
                 self._log_chat(
                     text=text,
@@ -130,6 +133,7 @@ class ShowcaseService:
                 response_format=response_format,
                 model_route=model_route_data,
                 think=enable_thinking,
+                ollama_timeout_seconds=ollama_timeout_seconds,
             )
             self._log_chat(
                 text=text,
@@ -153,6 +157,7 @@ class ShowcaseService:
                 model_route=model_route_data,
                 show_tool_traces=show_tool_traces,
                 think=enable_thinking,
+                ollama_timeout_seconds=ollama_timeout_seconds,
             )
             result.tool_calls.extend(contextual_calls)
             self._log_chat(
@@ -174,6 +179,7 @@ class ShowcaseService:
                 response_format=response_format,
                 model_route=model_route_data,
                 think=enable_thinking,
+                ollama_timeout_seconds=ollama_timeout_seconds,
             )
             self._log_chat(
                 text=text,
@@ -201,6 +207,7 @@ class ShowcaseService:
                 options=selected_options,
                 think=False,
                 stream=False,
+                timeout_seconds=ollama_timeout_seconds,
             )
 
             if not decision_result.ok:
@@ -237,6 +244,7 @@ class ShowcaseService:
                     show_tool_traces=show_tool_traces,
                     think=enable_thinking,
                     recovery_note=f"The tool planner returned invalid JSON: {exc}",
+                    ollama_timeout_seconds=ollama_timeout_seconds,
                 )
                 fallback.tool_calls.extend(tool_calls)
                 self._log_chat(
@@ -256,7 +264,7 @@ class ShowcaseService:
                 if decision.get("message") and "<END_OF_MESSAGE>" not in answer_text:
                     continue
                 if answer_text and self._requires_tree_context(text) and not any(call.tool_name == "tree_view" for call in tool_calls):
-                    call = self.tools.run_tool("tree_view", {"path": ".", "max_depth": 4}, confirm=confirm)
+                    call = self.tools.run_tool("tree_view", {"path": ".", "max_depth": 4}, confirm=confirm, timeout_seconds=tool_timeout_seconds)
                     tool_calls.append(call)
                     tool_context.append(compact_tool_result(call))
                     continue
@@ -332,7 +340,7 @@ class ShowcaseService:
                 tool_context.append(compact_tool_result(blocked))
                 break
 
-            call = self.tools.run_tool(tool_name, normalized_args, confirm=confirm)
+            call = self.tools.run_tool(tool_name, normalized_args, confirm=confirm, timeout_seconds=tool_timeout_seconds)
             executed_signatures.add(signature)
             tool_calls.append(call)
             tool_context.append(compact_tool_result(call))
@@ -349,6 +357,7 @@ class ShowcaseService:
             model_route=model_route_data,
             show_tool_traces=show_tool_traces,
             think=enable_thinking,
+            ollama_timeout_seconds=ollama_timeout_seconds,
         )
         result.tool_calls.extend(tool_calls)
 
@@ -407,12 +416,13 @@ class ShowcaseService:
         arguments: dict | None = None,
         *,
         confirm: bool = False,
+        timeout_seconds: int | None = None,
     ) -> ToolCall:
         """
         Developer/debug escape hatch only.
         Do not expose this as the primary chat UX.
         """
-        return self.tools.run_tool(name, arguments or {}, confirm=confirm)
+        return self.tools.run_tool(name, arguments or {}, confirm=confirm, timeout_seconds=timeout_seconds)
 
     def _deterministic_tool_route(
         self,
@@ -422,6 +432,7 @@ class ShowcaseService:
         model: str,
         model_route: dict[str, Any],
         available_tools: list[str],
+        tool_timeout_seconds: int | None,
     ) -> ActionResult | None:
         decision = self.router.route(text)
         if decision.route != "tool" or not decision.action:
@@ -433,7 +444,7 @@ class ShowcaseService:
             if command in {"command", "a command", "shell command", "a shell command"}:
                 return None
 
-        call = self.tools.run_tool(decision.action, decision.arguments or {}, confirm=confirm)
+        call = self.tools.run_tool(decision.action, decision.arguments or {}, confirm=confirm, timeout_seconds=tool_timeout_seconds)
         return ActionResult(
             ok=call.ok,
             message=call.summary,
@@ -459,6 +470,7 @@ class ShowcaseService:
         response_format: str | dict | None,
         model_route: dict[str, Any],
         think: bool = False,
+        ollama_timeout_seconds: int | None = None,
     ) -> ActionResult:
         result = self._ask_ollama(
             text,
@@ -468,6 +480,7 @@ class ShowcaseService:
             options=options,
             think=think,
             stream=False,
+            timeout_seconds=ollama_timeout_seconds,
         )
         if response_format is None:
             result.message = self._normalize_answer_text(result.message)
@@ -501,6 +514,7 @@ class ShowcaseService:
         show_tool_traces: bool,
         think: bool = False,
         recovery_note: str | None = None,
+        ollama_timeout_seconds: int | None = None,
     ) -> ActionResult:
         prompt = self._build_final_prompt(
             user_text=user_text,
@@ -516,6 +530,7 @@ class ShowcaseService:
             options=options,
             think=think,
             stream=False,
+            timeout_seconds=ollama_timeout_seconds,
         )
         result.data = {
             **(result.data or {}),
@@ -788,6 +803,7 @@ Do not describe yourself as a package, wrapper, showcase assistant, or local too
         options: dict | None = None,
         stream: bool = False,
         think: bool = False,
+        timeout_seconds: int | None = None,
     ):
         signature = inspect.signature(self.ollama.ask)
         params = signature.parameters
@@ -799,6 +815,7 @@ Do not describe yourself as a package, wrapper, showcase assistant, or local too
             "options": options,
             "stream": stream,
             "think": think,
+            "timeout_seconds": timeout_seconds,
         }
         accepted = {
             key: value
@@ -807,41 +824,47 @@ Do not describe yourself as a package, wrapper, showcase assistant, or local too
         }
         return self.ollama.ask(prompt, **accepted)
 
-    def _legacy_direct_tool_fallback(self, text: str, *, confirm: bool = False) -> ActionResult | None:
+    def _legacy_direct_tool_fallback(
+        self,
+        text: str,
+        *,
+        confirm: bool = False,
+        tool_timeout_seconds: int | None = None,
+    ) -> ActionResult | None:
         lowered = text.strip().lower()
 
         tool_call: ToolCall | None = None
 
         if lowered.startswith(("find file ", "search files ")):
             query = text.split(maxsplit=2)[-1]
-            tool_call = self.tools.run_tool("file_search", {"query": query}, confirm=confirm)
+            tool_call = self.tools.run_tool("file_search", {"query": query}, confirm=confirm, timeout_seconds=tool_timeout_seconds)
 
         elif lowered.startswith(("read file ", "inspect file ", "summarize file ")):
             path_text = text.split(maxsplit=2)[-1]
-            tool_call = self.tools.run_tool("read_file", {"path_text": path_text}, confirm=confirm)
+            tool_call = self.tools.run_tool("read_file", {"path_text": path_text}, confirm=confirm, timeout_seconds=tool_timeout_seconds)
 
         elif lowered.startswith(("search content ", "grep ", "find text ")):
             query = text.split(maxsplit=2)[-1]
-            tool_call = self.tools.run_tool("content_search", {"query": query}, confirm=confirm)
+            tool_call = self.tools.run_tool("content_search", {"query": query}, confirm=confirm, timeout_seconds=tool_timeout_seconds)
 
         elif lowered.startswith(("build index", "index project", "index files")):
-            tool_call = self.tools.run_tool("build_index", {}, confirm=confirm)
+            tool_call = self.tools.run_tool("build_index", {}, confirm=confirm, timeout_seconds=tool_timeout_seconds)
 
         elif lowered.startswith(("query index ", "search index ")):
             query = text.split(maxsplit=2)[-1]
-            tool_call = self.tools.run_tool("query_index", {"query": query}, confirm=confirm)
+            tool_call = self.tools.run_tool("query_index", {"query": query}, confirm=confirm, timeout_seconds=tool_timeout_seconds)
 
         elif lowered.startswith(("show tree", "tree view", "project tree")) or any(
             phrase in lowered for phrase in ("project structure", "show me the structure", "look around")
         ):
-            tool_call = self.tools.run_tool("tree_view", {"path": ".", "max_depth": 4}, confirm=confirm)
+            tool_call = self.tools.run_tool("tree_view", {"path": ".", "max_depth": 4}, confirm=confirm, timeout_seconds=tool_timeout_seconds)
 
         elif lowered.startswith(("show adapters", "adapter inventory")) or "adapter" in lowered:
-            tool_call = self.tools.run_tool("adapter_inventory", {}, confirm=confirm)
+            tool_call = self.tools.run_tool("adapter_inventory", {}, confirm=confirm, timeout_seconds=tool_timeout_seconds)
 
         elif lowered.startswith(("run ", "shell ")):
             command = text.removeprefix("run ").removeprefix("shell ").strip()
-            tool_call = self.tools.run_tool("shell_command", {"command": command}, confirm=confirm)
+            tool_call = self.tools.run_tool("shell_command", {"command": command}, confirm=confirm, timeout_seconds=tool_timeout_seconds)
 
         if tool_call is None:
             return None

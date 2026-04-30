@@ -54,6 +54,8 @@ def run_ollama_wrapper(
                 allow_tools=bool(payload.get("showcase_allow_tools", True)),
                 max_tool_calls=int(payload.get("showcase_max_tool_calls", 4)),
                 show_tool_traces=bool(payload.get("showcase_show_tool_traces", False)),
+                ollama_timeout_seconds=_optional_timeout(payload.get("showcase_ollama_timeout_seconds"), _service_ollama_timeout(service)),
+                tool_timeout_seconds=_optional_timeout(payload.get("showcase_tool_timeout_seconds"), _service_tool_timeout(service)),
             )
             if bool(payload.get("stream", False)):
                 self._send_ollama_stream(
@@ -80,6 +82,8 @@ def run_ollama_wrapper(
                 allow_tools=bool(payload.get("showcase_allow_tools", True)),
                 max_tool_calls=int(payload.get("showcase_max_tool_calls", 4)),
                 show_tool_traces=bool(payload.get("showcase_show_tool_traces", False)),
+                ollama_timeout_seconds=_optional_timeout(payload.get("showcase_ollama_timeout_seconds"), _service_ollama_timeout(service)),
+                tool_timeout_seconds=_optional_timeout(payload.get("showcase_tool_timeout_seconds"), _service_tool_timeout(service)),
             )
             if bool(payload.get("stream", False)):
                 self._send_ollama_stream(
@@ -129,7 +133,7 @@ def run_ollama_wrapper(
                 if key.lower() != "host":
                     request.add_header(key, value)
             try:
-                with urlopen(request, timeout=120) as response:
+                with urlopen(request, timeout=_service_ollama_timeout(service)) as response:
                     data = response.read()
                     self.send_response(getattr(response, "status", 200))
                     self.send_header(
@@ -198,6 +202,24 @@ def _optional_string(value):
     if text.lower() in {"none", "null", "auto", "default"}:
         return None
     return text or None
+
+
+def _optional_timeout(value, default: int) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed == default:
+        return None
+    return max(1, min(3600, parsed))
+
+
+def _service_ollama_timeout(service) -> int:
+    return int(getattr(getattr(getattr(service, "config", None), "ollama", None), "timeout_seconds", 120))
+
+
+def _service_tool_timeout(service) -> int:
+    return int(getattr(getattr(getattr(service, "config", None), "shell_policy", None), "timeout_seconds", 30))
 
 
 def extract_chat_text(payload: dict) -> str:

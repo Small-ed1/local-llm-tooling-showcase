@@ -103,6 +103,10 @@ const DEFAULT_SETTINGS = {
   memoryPrefix: "Relevant local UI memories",
   profilePrefix: "Relevant profile information",
   responseFormat: "",
+  runtimeTimeouts: {
+    ollama: 120,
+    tools: 30
+  },
   theme: {
     primary: "#07100d",
     accent: "#78f0ad",
@@ -1598,6 +1602,14 @@ function buildResponseFormat() {
   return state.settings.responseFormat === "json" ? "json" : null;
 }
 
+function buildRuntimeTimeouts() {
+  const timeouts = state.settings.runtimeTimeouts || DEFAULT_SETTINGS.runtimeTimeouts;
+  return {
+    ollama_timeout_seconds: Math.max(1, Math.min(3600, Number(timeouts.ollama) || DEFAULT_SETTINGS.runtimeTimeouts.ollama)),
+    tool_timeout_seconds: Math.max(1, Math.min(3600, Number(timeouts.tools) || DEFAULT_SETTINGS.runtimeTimeouts.tools))
+  };
+}
+
 function previewAutoRoute(text) {
   if ($("modelSelect").value) return;
   const profile = routeModelForText(text);
@@ -1655,7 +1667,8 @@ async function requestAssistantResponse({ userText, requestText, assistantMessag
     model: selectedModel || null,
     system_prompt: buildSystemPrompt(),
     options: modelOptions,
-    response_format: buildResponseFormat()
+    response_format: buildResponseFormat(),
+    ...buildRuntimeTimeouts()
   };
   $("requestStats").textContent = "running...";
   $("sendBtn").textContent = "X";
@@ -1950,7 +1963,7 @@ async function runManualTool() {
     const res = await fetch("/api/tool", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tool, arguments: args, confirm: $("toolConfirmToggle").checked })
+      body: JSON.stringify({ tool, arguments: args, confirm: $("toolConfirmToggle").checked, tool_timeout_seconds: buildRuntimeTimeouts().tool_timeout_seconds })
     });
     if (res.status === 404) throw new Error("manual endpoint missing");
     result = await res.json();
@@ -1971,7 +1984,7 @@ async function runManualToolFallback(tool, args) {
   const res = await fetch("/api/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, confirm: $("toolConfirmToggle").checked, stream: false })
+    body: JSON.stringify({ text, confirm: $("toolConfirmToggle").checked, stream: false, ...buildRuntimeTimeouts() })
   });
   const data = await res.json();
   return { tool_call: { tool_name: tool, ok: Boolean(data.ok), summary: data.message || "Fallback /api/ask completed.", data: { fallback: true, sent_text: text, tool_calls: data.tool_calls || [] } } };
@@ -2125,7 +2138,7 @@ async function draftSystemPromptFromSettings() {
     const res = await fetch("/api/tool", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tool: "draft_system_prompt", arguments: args, confirm: false })
+      body: JSON.stringify({ tool: "draft_system_prompt", arguments: args, confirm: false, tool_timeout_seconds: buildRuntimeTimeouts().tool_timeout_seconds })
     });
     const data = await res.json();
     const draft = data.tool_call?.data || {};
@@ -2205,6 +2218,9 @@ function syncSettingsModal() {
   $("settingsMemoryPrefix").value = state.settings.memoryPrefix || DEFAULT_SETTINGS.memoryPrefix;
   $("settingsResponseFormat").value = state.settings.responseFormat || "";
   const opts = state.settings.modelOptions || {};
+  const runtimeTimeouts = state.settings.runtimeTimeouts || DEFAULT_SETTINGS.runtimeTimeouts;
+  $("settingsOllamaTimeout").value = runtimeTimeouts.ollama ?? DEFAULT_SETTINGS.runtimeTimeouts.ollama;
+  $("settingsToolTimeout").value = runtimeTimeouts.tools ?? DEFAULT_SETTINGS.runtimeTimeouts.tools;
   $("settingsTemperature").value = opts.temperature ?? 0.2;
   $("settingsNumCtx").value = opts.num_ctx ?? 4096;
   $("settingsTopP").value = opts.top_p ?? 0.95;
@@ -2283,6 +2299,10 @@ function saveSettings() {
   };
   state.settings.memoryPrefix = $("settingsMemoryPrefix").value.trim() || DEFAULT_SETTINGS.memoryPrefix;
   state.settings.responseFormat = $("settingsResponseFormat").value;
+  state.settings.runtimeTimeouts = {
+    ollama: Math.max(1, Math.min(3600, Number($("settingsOllamaTimeout").value) || DEFAULT_SETTINGS.runtimeTimeouts.ollama)),
+    tools: Math.max(1, Math.min(3600, Number($("settingsToolTimeout").value) || DEFAULT_SETTINGS.runtimeTimeouts.tools))
+  };
   state.settings.modelOptions = {
     temperature: Number($("settingsTemperature").value),
     num_ctx: Number($("settingsNumCtx").value),

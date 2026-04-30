@@ -38,3 +38,13 @@ def test_static_ui_records_local_storage_schema_version():
     app = (ROOT / "src" / "tooling_showcase" / "static" / "app.js").read_text(encoding="utf-8")
     assert 'schema: "showcase.ui.schema.v1"' in app
     assert "const LOCAL_STORAGE_SCHEMA_VERSION = 3" in app
+
+
+def test_static_ui_exposes_runtime_timeout_settings():
+    index = (ROOT / "src" / "tooling_showcase" / "static" / "index.html").read_text(encoding="utf-8")
+    app = (ROOT / "src" / "tooling_showcase" / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="settingsOllamaTimeout"' in index
+    assert 'id="settingsToolTimeout"' in index
+    assert "ollama_timeout_seconds" in app
+    assert "tool_timeout_seconds" in app

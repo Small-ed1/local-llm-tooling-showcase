@@ -17,10 +17,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="tooling-showcase")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    def add_timeout_options(command: argparse.ArgumentParser) -> None:
+        command.add_argument("--ollama-timeout", type=int, default=None, help="Ollama request timeout in seconds.")
+        command.add_argument("--tool-timeout", type=int, default=None, help="Tool execution timeout in seconds.")
+
     ask = sub.add_parser("ask", help="Route a request through the showcase runtime")
     ask.add_argument("text")
     ask.add_argument("--confirm", action="store_true")
     ask.add_argument("--workspace", default=None)
+    add_timeout_options(ask)
 
     journal = sub.add_parser("journal", help="Show recent immutable event records")
     journal.add_argument("--limit", type=int, default=10)
@@ -40,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     tui = sub.add_parser("tui", help="Run the terminal UI")
     tui.add_argument("--workspace", default=None)
+    add_timeout_options(tui)
 
     serve = sub.add_parser("serve", help="Run the showcase web UI")
     serve.add_argument(
@@ -49,6 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve.add_argument("--port", type=int, default=8123)
     serve.add_argument("--workspace", default=None)
+    add_timeout_options(serve)
 
     wrapper = sub.add_parser(
         "serve-ollama", help="Run an Ollama-compatible showcase wrapper"
@@ -60,6 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     wrapper.add_argument("--port", type=int, default=11436)
     wrapper.add_argument("--workspace", default=None)
+    add_timeout_options(wrapper)
     wrapper.add_argument(
         "--ollama-endpoint",
         default=None,
@@ -76,6 +84,10 @@ def main() -> int:
     config = load_config(root)
     if getattr(args, "workspace", None):
         config.workspace_root = Path(args.workspace).resolve()
+    if getattr(args, "ollama_timeout", None) is not None:
+        config.ollama.timeout_seconds = max(1, args.ollama_timeout)
+    if getattr(args, "tool_timeout", None) is not None:
+        config.shell_policy.timeout_seconds = max(1, args.tool_timeout)
     service = ShowcaseService(config)
 
     if args.command == "ask":

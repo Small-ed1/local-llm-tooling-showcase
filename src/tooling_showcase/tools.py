@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 import inspect
 import json
 import subprocess
+from threading import RLock
 
 from tooling_showcase.adapters import WorkspaceAdapters
 from tooling_showcase.config import ShowcaseConfig
@@ -103,6 +104,7 @@ class ToolRuntime:
         self.checkpoint_path = self.state_root / "checkpoints.json"
         self.device_log_path = self.state_root / "device_commands.jsonl"
         self._tool_stats_path = self.state_root / "tool_stats.json"
+        self._timeout_lock = RLock()
         self.aliases = {
             "search_text": "grep_search",
             "patch_file": "apply_patch",
@@ -112,7 +114,14 @@ class ToolRuntime:
         self.library = LocalLibrary.from_env()
         self.state_root.mkdir(parents=True, exist_ok=True)
 
-    def run_tool(self, name: str, arguments: dict | None = None, *, confirm: bool = False) -> ToolCall:
+    def run_tool(
+        self,
+        name: str,
+        arguments: dict | None = None,
+        *,
+        confirm: bool = False,
+        timeout_seconds: int | None = None,
+    ) -> ToolCall:
         arguments = arguments or {}
         name = self.aliases.get(name, name)
         if name == "read_file" and "path" in arguments and "path_text" not in arguments:
@@ -123,20 +132,26 @@ class ToolRuntime:
             call = ToolCall(name, False, f"Unknown tool: {name}")
             self._record_tool_stat(name, call.ok)
             return call
-        try:
-            call_arguments = dict(arguments)
-            if "confirm" not in call_arguments:
-                signature = inspect.signature(handler)
-                if "confirm" in signature.parameters:
-                    call_arguments["confirm"] = confirm
+        with self._timeout_lock:
+            original_timeout = self.config.shell_policy.timeout_seconds
+            if timeout_seconds is not None:
+                self.config.shell_policy.timeout_seconds = timeout_seconds
             try:
-                call = handler(**call_arguments)
-            except TypeError:
-                call = handler(arguments)
-        except TypeError as e:
-            call = ToolCall(name, False, f"Invalid arguments: {e}")
-        except Exception as e:
-            call = ToolCall(name, False, f"Tool failed: {e}")
+                call_arguments = dict(arguments)
+                if "confirm" not in call_arguments:
+                    signature = inspect.signature(handler)
+                    if "confirm" in signature.parameters:
+                        call_arguments["confirm"] = confirm
+                try:
+                    call = handler(**call_arguments)
+                except TypeError:
+                    call = handler(arguments)
+            except TypeError as e:
+                call = ToolCall(name, False, f"Invalid arguments: {e}")
+            except Exception as e:
+                call = ToolCall(name, False, f"Tool failed: {e}")
+            finally:
+                self.config.shell_policy.timeout_seconds = original_timeout
         self._record_tool_stat(name, bool(getattr(call, "ok", False)))
         return call
 

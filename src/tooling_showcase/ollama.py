@@ -22,6 +22,7 @@ class OllamaClient:
         options: dict | None = None,
         stream: bool = False,
         think: bool = False,
+        timeout_seconds: int | None = None,
     ) -> ActionResult:
         if not self.config.enabled:
             return ActionResult(False, "Local Ollama fallback is disabled.")
@@ -53,10 +54,10 @@ class OllamaClient:
         )
 
         if stream:
-            return self._stream_request(request)
+            return self._stream_request(request, timeout_seconds=timeout_seconds)
 
         try:
-            with urlopen(request, timeout=self.config.timeout_seconds) as response:
+            with urlopen(request, timeout=timeout_seconds or self.config.timeout_seconds) as response:
                 raw = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
@@ -69,6 +70,7 @@ class OllamaClient:
                     options=options,
                     stream=stream,
                     think=False,
+                    timeout_seconds=timeout_seconds,
                 )
             return ActionResult(False, f"Ollama HTTP {exc.code}: {body}")
         except URLError as exc:
@@ -85,9 +87,9 @@ class OllamaClient:
         raw["thinking"] = thinking
         return ActionResult(True, content, data=raw)
 
-    def _stream_request(self, request: Request) -> ActionResult:
+    def _stream_request(self, request: Request, *, timeout_seconds: int | None = None) -> ActionResult:
         try:
-            response = urlopen(request, timeout=self.config.timeout_seconds)
+            response = urlopen(request, timeout=timeout_seconds or self.config.timeout_seconds)
             chunks: list[str] = []
             while True:
                 chunk = response.read(4096)

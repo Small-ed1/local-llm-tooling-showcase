@@ -230,6 +230,8 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 stream = bool(payload.get("stream", False))
                 options = payload.get("options") if isinstance(payload.get("options"), dict) else None
                 response_format = _response_format(payload.get("response_format"))
+                ollama_timeout_seconds = _optional_timeout(payload.get("ollama_timeout_seconds"), service.config.ollama.timeout_seconds)
+                tool_timeout_seconds = _optional_timeout(payload.get("tool_timeout_seconds"), service.config.shell_policy.timeout_seconds)
 
                 try:
                     result = _call_service_handle(
@@ -244,6 +246,8 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                         allow_tools=bool(payload.get("allow_tools", True)),
                         max_tool_calls=_safe_int(payload.get("max_tool_calls"), 4, minimum=0, maximum=12),
                         show_tool_traces=bool(payload.get("show_tool_traces", False)),
+                        ollama_timeout_seconds=ollama_timeout_seconds,
+                        tool_timeout_seconds=tool_timeout_seconds,
                     )
                 except Exception as exc:
                     result = ActionResult(False, f"Request failed before completion: {exc}")
@@ -283,6 +287,7 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 tool_name = str(payload.get("tool") or payload.get("name") or "").strip()
                 arguments = payload.get("arguments") or payload.get("args") or {}
                 confirm = bool(payload.get("confirm", False))
+                tool_timeout_seconds = _optional_timeout(payload.get("tool_timeout_seconds"), service.config.shell_policy.timeout_seconds)
 
                 if not tool_name:
                     self._send_json({"ok": False, "error": "Missing tool name."}, status=HTTPStatus.BAD_REQUEST)
@@ -292,7 +297,7 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                     self._send_json({"ok": False, "error": "Tool arguments must be a JSON object."}, status=HTTPStatus.BAD_REQUEST)
                     return
 
-                call = service.tools.run_tool(tool_name, arguments, confirm=confirm)
+                call = service.tools.run_tool(tool_name, arguments, confirm=confirm, timeout_seconds=tool_timeout_seconds)
                 ok = bool(getattr(call, "ok", False))
                 self._send_json(
                     {"ok": ok, "tool_call": _tool_call_to_dict(call)},
@@ -474,6 +479,8 @@ def _call_service_handle(
     allow_tools: bool = True,
     max_tool_calls: int = 4,
     show_tool_traces: bool = False,
+    ollama_timeout_seconds: int | None = None,
+    tool_timeout_seconds: int | None = None,
 ):
     """Call ShowcaseService.handle across old and new service signatures."""
     try:
@@ -490,6 +497,8 @@ def _call_service_handle(
             "allow_tools": allow_tools,
             "max_tool_calls": max_tool_calls,
             "show_tool_traces": show_tool_traces,
+            "ollama_timeout_seconds": ollama_timeout_seconds,
+            "tool_timeout_seconds": tool_timeout_seconds,
         }
         for key, value in optional.items():
             if key == "allow_tools" and value is True:
@@ -515,7 +524,7 @@ def _load_ollama_models(service: ShowcaseService) -> dict:
     profiles = benchmark_profiles(benchmark_path)
 
     try:
-        with urlopen(request, timeout=10) as response:
+        with urlopen(request, timeout=service.config.ollama.timeout_seconds) as response:
             raw = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
@@ -749,6 +758,8 @@ def _runtime_info(service: ShowcaseService, events: list[dict]) -> dict:
         "tools": _tool_cards(service.tools.available_tools()),
         "adapters": _adapter_cards(service, events),
         "ollama_endpoint": service.config.ollama.endpoint,
+        "ollama_timeout_seconds": service.config.ollama.timeout_seconds,
+        "tool_timeout_seconds": service.config.shell_policy.timeout_seconds,
     }
 
 
@@ -849,6 +860,16 @@ def _safe_int(value, default: int, *, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         parsed = default
     return max(minimum, min(maximum, parsed))
+
+
+def _optional_timeout(value, default: int) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed == default:
+        return None
+    return max(1, min(3600, parsed))
 
 
 def _response_format(value) -> str | dict | None:

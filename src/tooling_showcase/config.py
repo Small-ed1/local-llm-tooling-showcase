@@ -87,13 +87,16 @@ def load_config(project_root: Path | None = None) -> ShowcaseConfig:
         timeout_seconds=int(os.getenv("TOOLING_SHOWCASE_OLLAMA_TIMEOUT", "120")),
         temperature=float(os.getenv("TOOLING_SHOWCASE_OLLAMA_TEMPERATURE", "0.2")),
     )
+    shell_policy = ShellPolicy(
+        timeout_seconds=int(os.getenv("TOOLING_SHOWCASE_TOOL_TIMEOUT", "30")),
+    )
     return ShowcaseConfig(
         project_root=root,
         workspace_root=workspace_root,
         portfolio_root=portfolio_root,
         journal_path=journal_path,
         ollama=ollama,
-        shell_policy=ShellPolicy(),
+        shell_policy=shell_policy,
         benchmark_path=benchmark_path,
     )
 
