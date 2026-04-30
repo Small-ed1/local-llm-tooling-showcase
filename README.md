@@ -47,6 +47,8 @@ Windows uses PowerShell and needs one extra compatibility package because Python
 If you are on Windows, use the included PowerShell installer:
 
 ```powershell
+git clone https://github.com/Small-ed1/local-llm-tooling-showcase.git
+cd local-llm-tooling-showcase
 powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
 ```
 
