@@ -536,7 +536,7 @@ def _call_service_handle(
 
 def _call_service_stream(service: ShowcaseService, text: str, **kwargs):
     try:
-        stream_handle = getattr(service, "stream_handle")
+        stream_handle = service.stream_handle
     except AttributeError:
         result = _call_service_handle(service, text, stream=True, **kwargs)
         yield from _stream_server_chunks(result.ok, result.message, result.tool_calls, data=result.data or {}, api_thinking=_result_thinking(result))
