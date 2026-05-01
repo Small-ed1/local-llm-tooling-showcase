@@ -1176,6 +1176,7 @@ function addSessionMessage(role, content, extra = {}) {
   if (role === "user") updateSessionTitle(session, content);
   persist();
   renderSessions();
+  renderSidebarSessions();
   renderSessionTitle();
   renderSidebarOverview();
   return message;
@@ -1264,17 +1265,7 @@ function renderSidebarOverview() {
     <div class="overview-tile"><strong>${state.settings.mode}</strong><span>interface mode</span></div>
     <div class="overview-tile"><strong>${state.settings.stream ? "on" : "off"}</strong><span>streaming</span></div>`;
   }
-  const sessionInfo = $("sessionInfoGrid");
-  if (sessionInfo) {
-    const currentMessages = session?.messages?.length || 0;
-    const updated = session?.messages?.at(-1)?.createdAt || session?.createdAt;
-    sessionInfo.innerHTML = `
-      <div class="overview-tile"><strong>${currentMessages}</strong><span>active messages</span></div>
-      <div class="overview-tile"><strong>${messages}</strong><span>all messages</span></div>
-      <div class="overview-tile"><strong>${session?.title ? escapeHtml(session.title).slice(0, 18) : "New"}</strong><span>active session</span></div>
-      <div class="overview-tile"><strong>${updated ? new Date(updated).toLocaleDateString() : "-"}</strong><span>last update</span></div>`;
-  }
-  renderRecentSessions();
+  renderSidebarSessions();
   applyModeVisibility();
 }
 
@@ -1328,7 +1319,7 @@ function renderSessions() {
     .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || new Date(b.messages?.at(-1)?.createdAt || b.createdAt) - new Date(a.messages?.at(-1)?.createdAt || a.createdAt));
   if (!sessions.length) {
     root.innerHTML = `<div class="session-item diagnostic-card"><strong>No matching chats</strong><span>Search did not match local session titles or messages.</span></div>`;
-    renderRecentSessions();
+    renderSidebarSessions();
     return;
   }
   sessions.forEach((session) => {
@@ -1360,12 +1351,11 @@ function renderSessions() {
     item.querySelector("[data-action=\"share\"]").addEventListener("click", (event) => { event.stopPropagation(); shareSession(session.id); });
     item.querySelector("[data-action=\"archive\"]").addEventListener("click", (event) => { event.stopPropagation(); archiveSession(session.id); });
     item.querySelector("[data-action=\"delete\"]").addEventListener("click", (event) => { event.stopPropagation(); requestDeleteSession(session.id); });
-    wireFloatingSessionMenus(item);
     item.addEventListener("dblclick", () => openSessionDetail(session));
     root.appendChild(item);
   });
   renderArchiveList();
-  renderRecentSessions();
+  renderSidebarSessions();
 }
 
 function renderArchiveList() {
@@ -1388,54 +1378,6 @@ function renderArchiveList() {
     item.addEventListener("dblclick", () => openSessionDetail(session));
     root.appendChild(item);
   });
-}
-
-function renderRecentSessions() {
-  const root = $("recentSessionsPullout");
-  const sidebarRoot = $("sidebarSessionHistory");
-  const recent = [...state.sessions].filter((session) => !session.archived)
-    .sort((a, b) => new Date(b.messages?.at(-1)?.createdAt || b.createdAt) - new Date(a.messages?.at(-1)?.createdAt || a.createdAt))
-    .slice(0, 6);
-  renderSidebarSessionHistory(sidebarRoot, recent);
-  if (!root) return;
-  if (!recent.length) {
-    root.innerHTML = `<div class="recent-empty">No chats yet.</div>`;
-    return;
-  }
-  root.innerHTML = `<div class="recent-pullout-title">Session history</div>` + recent.map((session) => recentSessionButtonHtml(session)).join("");
-  wireSessionHistoryButtons(root);
-}
-
-function renderSidebarSessionHistory(root, recent) {
-  if (!root) return;
-  const visible = recent.slice(0, 4);
-  if (!visible.length) {
-    root.innerHTML = `<div class="recent-empty">No chats yet.</div>`;
-    return;
-  }
-  root.innerHTML = visible.map((session) => recentSessionButtonHtml(session)).join("");
-  wireSessionHistoryButtons(root);
-}
-
-function recentSessionButtonHtml(session) {
-  const lastMessage = [...(session.messages || [])].reverse().find((message) => String(message.content || "").trim());
-  const snippet = String(lastMessage?.content || "New conversation").replace(/\s+/g, " ").trim().slice(0, 72);
-  const updated = session.messages?.at(-1)?.createdAt || session.createdAt;
-  return `
-    <div class="recent-session-row ${session.id === state.activeSessionId ? "active" : ""}">
-      <button class="recent-session-button" data-session-id="${escapeHtml(session.id)}">
-        <strong>${session.pinned ? "★ " : ""}${escapeHtml(session.title || "New session")}</strong>
-        <span>${escapeHtml(snippet || `${session.messages?.length || 0} messages`)}</span>
-        <small>${session.messages?.length || 0} messages · ${new Date(updated).toLocaleDateString()}</small>
-      </button>
-      <details class="session-menu compact-session-menu"><summary>⋯</summary><div class="session-menu-popover">
-        <button class="ghost-button" data-session-menu="pin" data-session-id="${escapeHtml(session.id)}">${session.pinned ? "Unpin" : "Pin"}</button>
-        <button class="ghost-button" data-session-menu="rename" data-session-id="${escapeHtml(session.id)}">Rename</button>
-        <button class="ghost-button" data-session-menu="share" data-session-id="${escapeHtml(session.id)}">Share</button>
-        <button class="ghost-button" data-session-menu="archive" data-session-id="${escapeHtml(session.id)}">Archive</button>
-        <button class="danger-button" data-session-menu="delete" data-session-id="${escapeHtml(session.id)}">Delete</button>
-      </div></details>
-    </div>`;
 }
 
 function sidebarSessions() {
@@ -1621,79 +1563,13 @@ function wireSidebarSearch() {
 
   input.addEventListener("input", () => {
     state.sessionSearchQuery = input.value;
-    renderSidebarSessions();
     renderSessions();
   });
-}
-
-function wireSessionHistoryButtons(root) {
-  root.querySelectorAll("[data-session-id]").forEach((button) => {
-    if (button.dataset.sessionMenu) return;
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      state.activeSessionId = button.dataset.sessionId;
-      const pullout = $("recentSessionsPullout");
-      if (pullout) pullout.hidden = true;
-      persist();
-      renderAll();
-      setActivePage("chat");
-    });
-  });
-  root.querySelectorAll("[data-session-menu]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const id = button.dataset.sessionId;
-      if (button.dataset.sessionMenu === "pin") togglePinSession(id);
-      if (button.dataset.sessionMenu === "rename") renameSession(id);
-      if (button.dataset.sessionMenu === "share") shareSession(id);
-      if (button.dataset.sessionMenu === "archive") archiveSession(id);
-      if (button.dataset.sessionMenu === "delete") requestDeleteSession(id);
-    });
-  });
-  wireFloatingSessionMenus(root);
-}
-
-function wireFloatingSessionMenus(root) {
-  root.querySelectorAll(".session-menu").forEach((menu) => {
-    menu.addEventListener("toggle", () => {
-      if (!menu.open) return;
-      document.querySelectorAll(".session-menu[open]").forEach((candidate) => {
-        if (candidate !== menu) candidate.open = false;
-      });
-      positionFloatingSessionMenu(menu);
-    });
-  });
-}
-
-function positionFloatingSessionMenu(menu) {
-  const popover = menu.querySelector(".session-menu-popover");
-  const summary = menu.querySelector("summary");
-  if (!popover || !summary) return;
-
-  const rect = summary.getBoundingClientRect();
-  const width = Math.min(150, window.innerWidth - 24);
-  const height = 190;
-
-  const left = Math.min(
-    window.innerWidth - width - 12,
-    Math.max(12, rect.right - width)
-  );
-
-  const below = rect.bottom + 6;
-  const above = rect.top - height - 6;
-  const top = below + height > window.innerHeight
-    ? Math.max(12, above)
-    : below;
-
-  popover.style.width = `${width}px`;
-  popover.style.left = `${left}px`;
-  popover.style.top = `${top}px`;
 }
 
 function toggleRecentSessionsPullout() {
   const root = $("recentSessionsPullout");
   if (!root) return;
-  renderRecentSessions();
   root.hidden = !root.hidden;
 }
 
@@ -3794,8 +3670,6 @@ function bindModalChrome() {
     if (event.target.closest(".session-menu")) return;
     document.querySelectorAll(".session-menu[open]").forEach((menu) => { menu.open = false; });
   });
-  window.addEventListener("resize", () => document.querySelectorAll(".session-menu[open]").forEach(positionFloatingSessionMenu));
-  document.addEventListener("scroll", () => document.querySelectorAll(".session-menu[open]").forEach(positionFloatingSessionMenu), true);
 }
 
 function bindBehaviorSettingsAutosave() {
