@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$ProjectPath = "$HOME\Projects\local-llm-tooling-showcase"
+$ProjectPath = "$HOME\local-llm-tooling-showcase"
 
 Write-Host ""
 Write-Host "== local-llm-tooling-showcase Windows installer ==" -ForegroundColor Cyan
