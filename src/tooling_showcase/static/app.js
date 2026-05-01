@@ -77,6 +77,476 @@ const TOOL_PRESETS = [
   { id: "search_files", label: "Search files", tool: "file_search", args: { query: "README" } }
 ];
 
+const THEME_PRESETS = {
+  forest: { label: "Forest cockpit", primary: "#07100d", accent: "#78f0ad", accentTwo: "#b6ffd2", panel: "#13261e", text: "#edf7f1", font: "system" },
+  midnight: { label: "Midnight blue", primary: "#070b18", accent: "#82aaff", accentTwo: "#c3dafe", panel: "#111827", text: "#eef4ff", font: "system" },
+  paper: { label: "Warm paper", primary: "#18120b", accent: "#f2b35d", accentTwo: "#ffe5b4", panel: "#2b2118", text: "#fff7e8", font: "serif" },
+  mono: { label: "Terminal mono", primary: "#050505", accent: "#00ff88", accentTwo: "#bcffd9", panel: "#111111", text: "#effff5", font: "mono" }
+};
+
+const SYSTEM_PROMPT_PRESETS = [
+  { title: "Clean everyday assistant", shortMessage: "Helpful, concise, non-technical by default", context: "Use simple language. Hide implementation details unless asked.", fullPrompt: "You are a clear, friendly local assistant. Answer directly, keep formatting readable, and avoid exposing internal tool or JSON details unless the user asks for debugging information." },
+  { title: "Senior software engineer", shortMessage: "Direct coding help", context: "Use tools when code or local files matter.", fullPrompt: "You are a pragmatic senior software engineer. Inspect the codebase before assuming, make minimal correct changes, explain tradeoffs briefly, and verify changes when practical." },
+  { title: "Research analyst", shortMessage: "Careful evidence-first analysis", context: "Prefer sources and structured conclusions.", fullPrompt: "You are a careful research analyst. Separate facts from assumptions, cite source context when tools are used, and end with clear recommendations or next steps." },
+  { title: "Linux troubleshooter", shortMessage: "Stepwise local diagnostics", context: "Focus on reproducible commands and safety.", fullPrompt: "You are a Linux troubleshooting assistant. Ask for or inspect exact errors, prefer safe read-only diagnostics first, and explain command purpose before risky operations." }
+];
+
+const MODEL_NUMERIC_OPTION_KEYS = [
+  "num_keep", "seed", "num_predict", "top_k", "top_p", "min_p", "typical_p", "repeat_last_n", "temperature", "repeat_penalty", "presence_penalty", "frequency_penalty", "num_ctx", "num_batch", "num_gpu", "main_gpu", "num_thread"
+];
+const MODEL_BOOLEAN_OPTION_KEYS = ["penalize_newline", "numa", "use_mmap"];
+
+const MODEL_OPTION_GROUPS = {
+  modelGenerationGrid: ["num_keep", "seed", "num_predict"],
+  modelSamplingGrid: ["top_k", "top_p", "min_p", "typical_p", "repeat_last_n", "temperature", "repeat_penalty", "presence_penalty", "frequency_penalty"],
+  modelRuntimeGrid: ["num_ctx", "num_batch", "num_gpu", "main_gpu", "num_thread"],
+  modelBooleanGrid: MODEL_BOOLEAN_OPTION_KEYS
+};
+
+const MODEL_OPTION_LABELS = {
+  num_keep: "Num keep", num_predict: "Max prediction", top_k: "Top K", top_p: "Top P", min_p: "Min P", typical_p: "Typical P", repeat_last_n: "Repeat last N", repeat_penalty: "Repeat penalty", presence_penalty: "Presence penalty", frequency_penalty: "Frequency penalty", penalize_newline: "Penalize newline", num_ctx: "Context tokens", num_batch: "Batch size", num_gpu: "GPU layers", main_gpu: "Main GPU", num_thread: "Threads", use_mmap: "Use mmap"
+};
+
+const HELP_TOPICS = [
+  {
+    id: "quickstart",
+    title: "Quickstart",
+    summary: "Install, start the server, open the browser UI, and run the first smoke checks.",
+    sections: [
+      {
+        title: "What this project is",
+        body: [
+          "Local LLM Tooling Showcase is a local-first assistant runtime. It is meant to show how chat, deterministic routing, guarded tools, local Ollama models, workspace inspection, model benchmarks, and event logging fit together in one compact project.",
+          "It is not a hosted SaaS app and it is not a full sandbox. It runs on your machine, reads from the workspace you point it at, and keeps risky local actions behind explicit boundaries."
+        ]
+      },
+      {
+        title: "Normal startup flow",
+        body: [
+          "Clone the repo, install the package, start the web server, and open the browser UI at the local address. The default web server binds to loopback, so it is intended for your own machine unless you intentionally pass a wider host.",
+          "Once the page opens, confirm the runtime status, make sure the model selector is populated if you want Ollama-backed answers, and send a basic prompt. If Ollama is not running, deterministic local tool routes can still work, but open-ended model replies will fail clearly instead of pretending everything is fine."
+        ]
+      },
+      {
+        title: "What to verify first",
+        body: [
+          "Check that the Python package installed, the static assets load, the server responds, and Ollama is reachable if you want model-backed responses. If the model list is empty, check Ollama before debugging the UI.",
+          "For frontend changes, this project has no build step. Use a JavaScript syntax check and then do a manual browser smoke test."
+        ]
+      }
+    ],
+    checklist: [
+      "Run the installer for your OS.",
+      "Start the server with tooling-showcase serve.",
+      "Open http://127.0.0.1:8123.",
+      "Check the runtime status area.",
+      "Send a simple prompt.",
+      "Try a deterministic local request like reading or finding README.",
+      "Run doctor if anything feels off."
+    ],
+    commands: [
+      "./install.sh",
+      "tooling-showcase serve",
+      "tooling-showcase serve --host 127.0.0.1 --port 8123",
+      "tooling-showcase doctor",
+      "node --check src/tooling_showcase/static/app.js"
+    ]
+  },
+  {
+    id: "windows",
+    title: "Windows Setup",
+    summary: "PowerShell setup, virtualenv activation, windows-curses, and common Windows install issues.",
+    sections: [
+      {
+        title: "Use the Windows installer",
+        body: [
+          "Windows should use the PowerShell installer instead of the Unix shell installer. The Windows script creates or reuses a virtual environment, upgrades pip, installs windows-curses, installs pytest, installs the project in editable mode, and then starts the server.",
+          "The curses compatibility package matters because Python's built-in curses module is not available by default on Windows."
+        ]
+      },
+      {
+        title: "Folder expectation",
+        body: [
+          "The current Windows installer expects the project folder at $HOME\\Projects\\local-llm-tooling-showcase. If the repo is somewhere else, either move it there or edit the ProjectPath variable at the top of the script.",
+          "Run the script from PowerShell. If execution policy blocks it, use the bypass command shown below."
+        ]
+      },
+      {
+        title: "Common Windows failures",
+        body: [
+          "If you see ModuleNotFoundError for curses or _curses, activate the virtual environment and install windows-curses inside it.",
+          "If py -3.11 fails, install Python 3.11 or adjust the script to use the Python launcher version you actually have. If tooling-showcase is not found after install, reactivate the virtual environment and rerun python -m pip install -e ."
+        ]
+      }
+    ],
+    checklist: [
+      "Use install-windows.ps1, not install.sh.",
+      "Confirm Python 3.11 is installed.",
+      "Confirm the repo path matches the script path.",
+      "Install windows-curses inside the venv.",
+      "Start Ollama separately if you want model-backed responses."
+    ],
+    commands: [
+      "powershell -ExecutionPolicy Bypass -File .\\install-windows.ps1",
+      "py -3.11 -m venv .venv",
+      ".\\.venv\\Scripts\\Activate.ps1",
+      "python -m pip install windows-curses pytest",
+      "python -m pip install -e .",
+      "tooling-showcase serve"
+    ]
+  },
+  {
+    id: "ollama",
+    title: "Ollama and Models",
+    summary: "Model inventory, routing profiles, thinking mode, timeouts, and slow response causes.",
+    sections: [
+      {
+        title: "How Ollama fits in",
+        body: [
+          "The backend uses Ollama for open-ended model responses. Requests can include a selected model, system prompt, response format, streaming, model options, and timeout settings.",
+          "If Ollama is disabled or unreachable, deterministic local tool routes can still work, but general LLM fallback will report failure instead of silently inventing an answer."
+        ]
+      },
+      {
+        title: "Model routing",
+        body: [
+          "The app can route requests by category and can use local benchmark profiles when they exist. Benchmarking helps assign installed models to jobs like general chat, coding, reasoning, summary, fast responses, Linux help, or other categories.",
+          "If no benchmark profile exists, models are treated as unprofiled and the UI should encourage running the benchmark suite."
+        ]
+      },
+      {
+        title: "Thinking mode and options",
+        body: [
+          "The UI exposes model options such as temperature, context tokens, batch size, GPU layers, repeat penalty, top-p, top-k, num_predict, seed, and related sampling/runtime values.",
+          "Thinking mode is only useful for models that support it. If a model rejects thinking, the Ollama client can retry without thinking rather than failing the whole request."
+        ]
+      },
+      {
+        title: "Why responses get slow",
+        body: [
+          "Large models, high context size, high max prediction, cold model loads, CPU-only inference, and too many tool/model loop steps can all make responses feel slow.",
+          "Start with a tiny benchmark smoke run, then expand to full benchmarking once the basic server and Ollama path work."
+        ]
+      }
+    ],
+    checklist: [
+      "Run ollama list.",
+      "Make sure Ollama is serving locally.",
+      "Check the model selector.",
+      "Run benchmark --list-models.",
+      "Run a small benchmark before a full benchmark.",
+      "Reduce num_ctx or num_predict if responses stall."
+    ],
+    commands: [
+      "ollama serve",
+      "ollama list",
+      "tooling-showcase models",
+      "tooling-showcase benchmark --list-models",
+      "tooling-showcase benchmark --limit-tasks 2",
+      "tooling-showcase benchmark --all"
+    ]
+  },
+  {
+    id: "chat",
+    title: "Chat Workflow",
+    summary: "User mode, developer mode, message editing, retries, sessions, and normal prompting.",
+    sections: [
+      {
+        title: "User mode vs developer mode",
+        body: [
+          "User mode keeps the interface focused on normal chatting. Developer mode exposes the manual tool console, journal, raw-ish diagnostics, and deeper runtime controls.",
+          "Tools and Journal should not appear in the sidebar while in user mode. If they do, the dev-only nav patch has not been applied correctly."
+        ]
+      },
+      {
+        title: "Chat-first behavior",
+        body: [
+          "The intended experience is natural language first. The user should ask normal questions, and the backend decides whether a deterministic route, direct model answer, contextual tool call, or model-directed tool loop is appropriate.",
+          "The model should not dump raw tool orchestration unless traces are explicitly enabled. Tool use should stay behind the curtain unless it improves clarity."
+        ]
+      },
+      {
+        title: "Editing and retrying",
+        body: [
+          "Message variants let you retry an assistant response without losing the original. Editing a previous user prompt should branch the conversation from that point so you can compare answers without starting from scratch.",
+          "This is useful for demos because it shows that the runtime can preserve local state while still letting the user iterate."
+        ]
+      },
+      {
+        title: "Good first prompts",
+        body: [
+          "Start with simple local workspace tasks: ask it to look around the project, find README, summarize a file, search content, or explain available tools.",
+          "Then test harder requests such as comparing project structure, finding where an API route lives, or asking for a release-readiness checklist."
+        ]
+      }
+    ],
+    checklist: [
+      "Use user mode for a clean demo.",
+      "Use developer mode when debugging tools or events.",
+      "Retry a response to confirm variants work.",
+      "Edit a user prompt to confirm branching works.",
+      "Archive old chats instead of deleting them during demos."
+    ],
+    commands: [
+      "Ask: look around this project",
+      "Ask: summarize README.md",
+      "Ask: search content ToolRuntime",
+      "Ask: what tools are available?",
+      "Ask: remember that I prefer concise answers"
+    ]
+  },
+  {
+    id: "tools",
+    title: "Tools and Safety",
+    summary: "Planner-safe tools, manual tools, confirmation gates, shell safety, and local file boundaries.",
+    sections: [
+      {
+        title: "Tool layers",
+        body: [
+          "The project has a broad ToolRuntime, but the model planner should only receive the smaller planner-safe tool surface. This keeps experimental or risky tools away from normal model-directed tool calls.",
+          "Manual tool execution is for developer/debug use. Normal users should be able to stay in chat and let the backend choose tools when useful."
+        ]
+      },
+      {
+        title: "Safe automatic tools",
+        body: [
+          "Read-only and planner-safe tools can run automatically when they improve correctness. These include file search, file read, content search, tree view, index query, library search, web lookup, and memory operations where appropriate.",
+          "The backend validates tool names and normalizes arguments. If the model invents a tool name, the request is rejected instead of executing unknown behavior."
+        ]
+      },
+      {
+        title: "Shell and risky actions",
+        body: [
+          "Shell execution is guarded. Some blocked substrings should never run, and risky operations require confirmation when the policy says so.",
+          "This matters because the project is local-first, not a sandbox. Treat the workspace as real files on a real machine."
+        ]
+      },
+      {
+        title: "When to inspect tools manually",
+        body: [
+          "Use the manual tool console when debugging route behavior, checking JSON argument shapes, confirming tool output, or demonstrating what the runtime can reach.",
+          "For normal usage, prefer asking in chat. If the chat result seems wrong, switch to developer mode and check the journal or manual tool output."
+        ]
+      }
+    ],
+    checklist: [
+      "Keep risky tools confirmation-gated.",
+      "Do not expose the full runtime tool list to model planning.",
+      "Use tree_view before deep repo questions.",
+      "Use file_search before read_file unless the path is exact.",
+      "Use content_search for symbols, routes, and function names.",
+      "Use shell_command only for explicit local terminal tasks."
+    ],
+    commands: [
+      "tooling-showcase ask \"find file README\"",
+      "tooling-showcase ask \"read file README.md\"",
+      "tooling-showcase ask \"search content ToolRuntime\"",
+      "tooling-showcase ask --confirm \"run git status\"",
+      "tooling-showcase doctor --json"
+    ]
+  },
+  {
+    id: "runtime",
+    title: "Runtime and API",
+    summary: "Server routes, static files, journal, models, adapters, and the Ollama-compatible wrapper.",
+    sections: [
+      {
+        title: "Web server routes",
+        body: [
+          "The stdlib server serves index.html at / and /index.html, static files under /static/, and JSON endpoints for journal, adapters, tools, models, runtime, and manual tool calls.",
+          "That means opening index.html directly from the filesystem is not equivalent to running the app. The UI expects backend API routes to exist."
+        ]
+      },
+      {
+        title: "Main API behavior",
+        body: [
+          "The main chat endpoint accepts message text, confirmation settings, selected model, system prompt, streaming, model options, response format, and timeout overrides.",
+          "The frontend should treat the backend as the source of truth for available tools, runtime status, model inventory, and journal records."
+        ]
+      },
+      {
+        title: "Ollama-compatible wrapper",
+        body: [
+          "The wrapper exposes familiar Ollama-shaped /api/chat and /api/generate endpoints while routing through the showcase service underneath.",
+          "Use the wrapper when you want another local client to talk to this project as if it were an Ollama-compatible endpoint, but with showcase tools and routing available."
+        ]
+      }
+    ],
+    checklist: [
+      "Serve through tooling-showcase serve, not file://.",
+      "Check /api/runtime when the UI status looks wrong.",
+      "Check /api/models when the model selector is empty.",
+      "Use serve-ollama only when you need Ollama API compatibility.",
+      "Keep default bind host as 127.0.0.1 unless LAN access is intentional."
+    ],
+    commands: [
+      "tooling-showcase serve",
+      "tooling-showcase serve --host 127.0.0.1 --port 8123",
+      "tooling-showcase serve-ollama --port 11436",
+      "curl http://127.0.0.1:8123/api/runtime",
+      "curl http://127.0.0.1:8123/api/models"
+    ]
+  },
+  {
+    id: "data",
+    title: "Sessions, Memory, and State",
+    summary: "Browser-local UI state, backend state files, exports, archives, memories, and resets.",
+    sections: [
+      {
+        title: "Where state lives",
+        body: [
+          "Browser sessions, UI settings, system prompts, profile fields, avatars, and UI memories live in browser local storage.",
+          "Backend memories, benchmark results, event journals, logs, indexes, and tool stats live under ignored state files in the project state area."
+        ]
+      },
+      {
+        title: "Sessions and archive",
+        body: [
+          "Archive should hide old chats from normal history without deleting them. This is safer during demos because you can clean up the sidebar without destroying useful examples.",
+          "Deletion should remain more deliberate than archive. If the UI gets weird, export first, then clear state."
+        ]
+      },
+      {
+        title: "Memories",
+        body: [
+          "Memories should be stable preferences or reusable details, not secrets, passwords, one-time prompt text, or random temporary notes.",
+          "The user should stay in control of memory creation, editing, export, and deletion."
+        ]
+      },
+      {
+        title: "Import and export",
+        body: [
+          "System prompts, profile data, and memories can be portable if exported as JSON or simple text-like files.",
+          "A good import flow should accept JSON arrays/objects where possible and treat text files as a single imported item using the filename as a title."
+        ]
+      }
+    ],
+    checklist: [
+      "Export sessions before clearing browser storage.",
+      "Archive before deleting.",
+      "Keep memories stable and non-secret.",
+      "Use JSON exports for portability.",
+      "Reset browser state only after saving anything important."
+    ],
+    commands: [
+      "Settings -> Data -> Export all sessions",
+      "Settings -> Memory -> Export memories",
+      "Settings -> System prompts -> Export",
+      "Settings -> Data -> Clear browser state",
+      "tooling-showcase journal --limit 5"
+    ]
+  },
+  {
+    id: "settings",
+    title: "Settings and Personalization",
+    summary: "Mode, density, streaming, confirmations, system prompts, profile, avatars, themes, and model options.",
+    sections: [
+      {
+        title: "Core settings",
+        body: [
+          "Mode controls whether the interface behaves like a clean user-facing chat app or a developer/debug cockpit. Density controls spacing. Streaming controls whether responses arrive incrementally.",
+          "Confirmation settings matter for risky tool calls. Keep confirmations enabled when demonstrating shell-like actions."
+        ]
+      },
+      {
+        title: "System prompts",
+        body: [
+          "System prompt presets let you create reusable behavior profiles. A good preset has a clear title, short message, context note, and full prompt.",
+          "The active system prompt should shape response style without leaking internal runtime details to the user."
+        ]
+      },
+      {
+        title: "Profile and avatars",
+        body: [
+          "The profile area is for local personalization. Avatar uploads are stored in browser-local state, so clearing browser storage can remove them.",
+          "Use small PNG, JPG, or WebP images to avoid bloating local storage."
+        ]
+      },
+      {
+        title: "Model options",
+        body: [
+          "The model option grids expose generation, sampling, runtime, and boolean settings. These can strongly affect speed, repetition, creativity, and memory use.",
+          "For demos, start conservative: moderate context, low temperature, default GPU settings, and no extreme max prediction unless you need long answers."
+        ]
+      }
+    ],
+    checklist: [
+      "Use user mode for normal demos.",
+      "Use developer mode for debugging.",
+      "Keep temperature low for technical checks.",
+      "Use theme presets before manually editing colors.",
+      "Export system prompts before resetting state."
+    ],
+    commands: [
+      "Settings -> General -> Mode",
+      "Settings -> System prompts -> Guided draft",
+      "Settings -> Profile -> Avatar upload",
+      "Settings -> Models -> Context tokens",
+      "Settings -> Theme -> Forest cockpit"
+    ]
+  },
+  {
+    id: "troubleshooting",
+    title: "Troubleshooting",
+    summary: "Ollama failures, empty model selector, static file issues, broken layouts, tool errors, and validation checks.",
+    sections: [
+      {
+        title: "The page loads but nothing works",
+        body: [
+          "Make sure you are serving the app through tooling-showcase serve. Opening index.html directly will not provide /api/runtime, /api/models, /api/ask, or the static route behavior the frontend expects.",
+          "Check the browser network tab for missing /static/app.css, /static/app.js, or failed API routes."
+        ]
+      },
+      {
+        title: "The model selector is empty",
+        body: [
+          "Check whether Ollama is installed and serving. Then run ollama list. If the backend can reach Ollama but models are missing, install or pull a model.",
+          "Run tooling-showcase models and benchmark --list-models to compare what the CLI sees against what the browser shows."
+        ]
+      },
+      {
+        title: "Streaming stalls or feels slow",
+        body: [
+          "Increase the Ollama timeout, reduce context size, reduce max prediction, or choose a smaller model. Cold model loading can make the first response much slower than later responses.",
+          "If a tool call is involved, also check the tool timeout and journal."
+        ]
+      },
+      {
+        title: "Tool output seems wrong",
+        body: [
+          "Switch to developer mode, inspect the journal, and try the same tool manually with explicit JSON arguments.",
+          "If the planner picked the wrong tool, improve the tool decision prompt or deterministic route. If the tool returned bad data, fix the tool implementation or its argument normalization."
+        ]
+      },
+      {
+        title: "Frontend changes broke the UI",
+        body: [
+          "Run node --check on app.js first. Then smoke test the page manually. This project has no frontend build step, so syntax checks and browser testing matter more.",
+          "If CSS behaves strangely, look for duplicate breakpoint rules, stale old stylesheets, and hidden elements that are still taking layout space."
+        ]
+      }
+    ],
+    checklist: [
+      "Run tooling-showcase doctor.",
+      "Run node --check on app.js.",
+      "Check missing static files in browser devtools.",
+      "Check /api/runtime.",
+      "Check Ollama with ollama list.",
+      "Inspect the journal in developer mode.",
+      "Export state before clearing browser storage."
+    ],
+    commands: [
+      "tooling-showcase doctor",
+      "tooling-showcase doctor --json",
+      "node --check src/tooling_showcase/static/app.js",
+      "pytest tests/",
+      "git diff --check",
+      "ollama list",
+      "tooling-showcase journal --limit 20"
+    ]
+  }
+];
+
 const ROUTE_PATTERNS = [
   ["vision", /\b(image|photo|picture|screenshot|diagram|chart|graph|ocr|scan|visual|vision)\b/i],
   ["roleplay", /\b(roleplay|pretend|character|persona|companion|romance|flirt|story|fiction|in character)\b/i],
@@ -88,6 +558,7 @@ const ROUTE_PATTERNS = [
 ];
 
 const DEFAULT_SETTINGS = {
+  mode: "dev",
   density: "comfortable",
   stream: true,
   confirm: false,
@@ -103,6 +574,7 @@ const DEFAULT_SETTINGS = {
   memoryPrefix: "Relevant local UI memories",
   profilePrefix: "Relevant profile information",
   responseFormat: "",
+  sessionSearchQuery: "",
   runtimeTimeouts: {
     ollama: 120,
     tools: 30
@@ -116,11 +588,24 @@ const DEFAULT_SETTINGS = {
     font: "system"
   },
   modelOptions: {
+    num_keep: -1,
     temperature: 0.2,
     num_ctx: 4096,
+    num_batch: 512,
+    num_gpu: -1,
+    main_gpu: 0,
+    num_thread: 0,
     top_p: 0.95,
     top_k: 40,
+    min_p: 0,
+    typical_p: 1,
     repeat_penalty: 1.1,
+    repeat_last_n: 64,
+    presence_penalty: 0,
+    frequency_penalty: 0,
+    penalize_newline: true,
+    numa: false,
+    use_mmap: true,
     seed: -1,
     num_predict: -1,
     keep_alive: "",
@@ -159,11 +644,6 @@ const PAGE_META = {
     title: "Manual tool console",
     summary: "Run explicit tools for debugging, inspection, and verification."
   },
-  adapters: {
-    eyebrow: "Workspace",
-    title: "Adapters",
-    summary: "Inspect connected source workspaces and reference projects."
-  },
   journal: {
     eyebrow: "Observability",
     title: "Journal",
@@ -172,7 +652,7 @@ const PAGE_META = {
   help: {
     eyebrow: "Help",
     title: "Help and troubleshooting",
-    summary: "Fix setup, Ollama, interface, tool, and local-state issues."
+    summary: "Read comprehensive setup, troubleshooting, import/export, and operating guides."
   }
 };
 
@@ -393,7 +873,7 @@ function activeModelProfiles() {
 }
 
 function activeSession() {
-  return state.sessions.find((session) => session.id === state.activeSessionId) ?? state.sessions[0];
+  return state.sessions.find((session) => session.id === state.activeSessionId) ?? state.sessions.find((session) => !session.archived) ?? state.sessions[0];
 }
 
 function activeSystemPrompt() {
@@ -513,15 +993,17 @@ function deepMerge(base, override) {
   return result;
 }
 
-function persist() {
-  syncSettingsFromMainControls();
+function persist({ syncControls = true } = {}) {
+  if (syncControls) syncSettingsFromMainControls();
+
   state.sessions.forEach((session) => normalizeSessionMessages(session));
+
   localStorage.setItem(STORAGE_KEYS.schema, String(LOCAL_STORAGE_SCHEMA_VERSION));
   localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(state.sessions));
   localStorage.setItem(STORAGE_KEYS.activeSession, state.activeSessionId ?? "");
   localStorage.setItem(STORAGE_KEYS.memories, JSON.stringify(state.memories));
   localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(state.settings));
-  localStorage.setItem(STORAGE_KEYS.systemPrompt, $("systemPromptInput").value);
+  localStorage.setItem(STORAGE_KEYS.systemPrompt, $("systemPromptInput")?.value || "");
   localStorage.setItem(STORAGE_KEYS.systemPrompts, JSON.stringify(state.systemPrompts));
   localStorage.setItem(STORAGE_KEYS.activeSystemPrompt, state.activeSystemPromptId ?? "");
   localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(state.profile));
@@ -548,15 +1030,21 @@ function loadLocalState() {
   }
   if (state.activeSystemPromptId && !state.systemPrompts.some((prompt) => prompt.id === state.activeSystemPromptId)) state.activeSystemPromptId = null;
   $("systemPromptInput").value = activeSystemPrompt()?.fullPrompt || legacyPrompt || "";
+  state.sessions.forEach((session) => {
+    session.pinned = Boolean(session.pinned);
+    session.archived = Boolean(session.archived);
+    session.shared = Boolean(session.shared);
+  });
   state.sessions.forEach((session) => normalizeSessionMessages(session));
   if (storedSchema !== LOCAL_STORAGE_SCHEMA_VERSION) localStorage.setItem(STORAGE_KEYS.schema, String(LOCAL_STORAGE_SCHEMA_VERSION));
   applySettingsToMainControls();
   if (!state.sessions.length) createSession(false);
+  if (state.sessions.find((session) => session.id === state.activeSessionId)?.archived) state.activeSessionId = state.sessions.find((session) => !session.archived)?.id || null;
   if (!activeSession()) state.activeSessionId = state.sessions[0].id;
 }
 
 function createSession(render = true) {
-  const session = { id: uid("session"), title: "New session", createdAt: new Date().toISOString(), messages: [] };
+  const session = { id: uid("session"), title: "New session", createdAt: new Date().toISOString(), messages: [], pinned: false, archived: false, shared: false };
   state.sessions.unshift(session);
   state.activeSessionId = session.id;
   persist();
@@ -586,7 +1074,7 @@ function requestDeleteSession(sessionId) {
   if (!session) return;
   openConfirmDialog({
     title: "Delete session?",
-    message: `This deletes “${session.title || "Untitled session"}” and its ${session.messages?.length || 0} messages from browser storage.`,
+    message: `${session.archived ? "Archived chat deletion is permanent." : "Tip: archive first if you may want this later."} This deletes “${session.title || "Untitled session"}” and its ${session.messages?.length || 0} messages from browser storage.`,
     confirmText: "Delete session",
     onConfirm: () => deleteSession(sessionId)
   });
@@ -603,6 +1091,45 @@ function deleteSession(sessionId) {
       state.activeSessionId = state.sessions[Math.max(0, index - 1)]?.id || state.sessions[0]?.id || null;
     }
   }
+  persist();
+  renderAll();
+}
+
+function togglePinSession(sessionId) {
+  const session = state.sessions.find((candidate) => candidate.id === sessionId);
+  if (!session) return;
+  session.pinned = !session.pinned;
+  persist();
+  renderAll();
+}
+
+function archiveSession(sessionId) {
+  const session = state.sessions.find((candidate) => candidate.id === sessionId);
+  if (!session) return;
+  session.archived = true;
+  if (state.activeSessionId === sessionId) state.activeSessionId = state.sessions.find((candidate) => !candidate.archived && candidate.id !== sessionId)?.id || null;
+  if (!activeSession()) createSession(false);
+  persist();
+  renderAll();
+}
+
+function restoreSession(sessionId) {
+  const session = state.sessions.find((candidate) => candidate.id === sessionId);
+  if (!session) return;
+  session.archived = false;
+  state.activeSessionId = session.id;
+  persist();
+  renderAll();
+  setActivePage("chat");
+}
+
+async function shareSession(sessionId) {
+  const session = state.sessions.find((candidate) => candidate.id === sessionId);
+  if (!session) return;
+  const text = JSON.stringify(session, null, 2);
+  session.shared = true;
+  try { await navigator.clipboard.writeText(text); }
+  catch { downloadJson(`${(session.title || "session").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-share.json`, session); }
   persist();
   renderAll();
 }
@@ -659,6 +1186,8 @@ function renderAll() {
   renderMemories();
   renderChat();
   renderRuntimeStatus();
+  renderHelp();
+  renderSidebarSessions();
   updatePageChrome();
   applySettingsVisuals();
 }
@@ -666,9 +1195,34 @@ function renderAll() {
 function renderSessionTitle() {
   const session = activeSession();
   const meta = PAGE_META[state.activePage] || PAGE_META.chat;
-  $("pageEyebrow").textContent = meta.eyebrow;
-  $("sessionTitle").textContent = state.activePage === "chat" ? (session?.title || "New session") : meta.title;
-  $("pageSummary").textContent = meta.summary;
+
+  const title =
+    state.activePage === "chat"
+      ? (session?.title || "New session")
+      : meta.title;
+
+  const eyebrow = meta.eyebrow;
+  const summary = meta.summary;
+
+  const pageEyebrow = $("pageEyebrow");
+  const sessionTitle = $("sessionTitle");
+  const pageSummary = $("pageSummary");
+
+  if (pageEyebrow) pageEyebrow.textContent = eyebrow;
+  if (sessionTitle) sessionTitle.textContent = title;
+  if (pageSummary) pageSummary.textContent = summary;
+
+  document.querySelectorAll("[data-page-eyebrow]").forEach((node) => {
+    node.textContent = eyebrow;
+  });
+
+  document.querySelectorAll("[data-page-title]").forEach((node) => {
+    node.textContent = title;
+  });
+
+  document.querySelectorAll("[data-page-summary]").forEach((node) => {
+    node.textContent = summary;
+  });
 }
 
 function updatePageChrome() {
@@ -684,25 +1238,31 @@ function updatePageChrome() {
 
 function setActivePage(pageName, { closeDrawer = true } = {}) {
   state.activePage = PAGE_META[pageName] ? pageName : "chat";
+  if (state.settings.mode === "user" && ["tools", "journal"].includes(state.activePage)) state.activePage = "chat";
   updatePageChrome();
   if (state.activePage === "journal") loadJournal();
-  if (state.activePage === "adapters") loadAdapters();
   if (closeDrawer) closeMobileDrawers();
 }
 
 function renderSidebarOverview() {
   const session = activeSession();
+  const activeSessions = state.sessions.filter((item) => !item.archived);
+  const archivedSessions = state.sessions.filter((item) => item.archived);
   const messages = state.sessions.reduce((sum, item) => sum + (item.messages?.length || 0), 0);
   const toolCalls = state.sessions.reduce((sum, item) => sum + (item.messages || []).reduce((inner, msg) => inner + (msg.toolCalls || []).length, 0), 0);
   const overview = $("overviewGrid");
   if (overview) {
     overview.innerHTML = `
-    <div class="overview-tile"><strong>${state.sessions.length}</strong><span>sessions</span></div>
-    <div class="overview-tile"><strong>${state.tools.length || "-"}</strong><span>tools</span></div>
-    <div class="overview-tile"><strong>${state.journal.length || "-"}</strong><span>events loaded</span></div>
+    <div class="overview-tile large"><strong>${activeSessions.length}</strong><span>active chats</span></div>
+    <div class="overview-tile large"><strong>${archivedSessions.length}</strong><span>archived chats</span></div>
+    <div class="overview-tile"><strong>${messages}</strong><span>total messages</span></div>
+    <div class="overview-tile"><strong>${state.models.length || "-"}</strong><span>local models</span></div>
+    <div class="overview-tile dev-only"><strong>${state.tools.length || "-"}</strong><span>runtime tools</span></div>
+    <div class="overview-tile dev-only"><strong>${state.journal.length || "-"}</strong><span>events loaded</span></div>
     <div class="overview-tile"><strong>${state.memories.length}</strong><span>memories</span></div>
-    <div class="overview-tile"><strong>${state.adapters.length || "-"}</strong><span>adapters</span></div>
-    <div class="overview-tile"><strong>${toolCalls}</strong><span>tool calls</span></div>`;
+    <div class="overview-tile dev-only"><strong>${toolCalls}</strong><span>tool calls</span></div>
+    <div class="overview-tile"><strong>${state.settings.mode}</strong><span>interface mode</span></div>
+    <div class="overview-tile"><strong>${state.settings.stream ? "on" : "off"}</strong><span>streaming</span></div>`;
   }
   const sessionInfo = $("sessionInfoGrid");
   if (sessionInfo) {
@@ -715,6 +1275,7 @@ function renderSidebarOverview() {
       <div class="overview-tile"><strong>${updated ? new Date(updated).toLocaleDateString() : "-"}</strong><span>last update</span></div>`;
   }
   renderRecentSessions();
+  applyModeVisibility();
 }
 
 function plannerSafeToolCount() {
@@ -724,13 +1285,12 @@ function plannerSafeToolCount() {
 function runtimeReadiness() {
   const selectedModel = $("modelSelect")?.value || "auto route";
   const toolTotal = state.tools.length || state.runtime?.tools?.length || 0;
-  const adapterTotal = state.adapters.length || state.runtime?.adapters?.length || 0;
   const journalKnown = Boolean(state.journalStats.path || state.runtime?.journal?.path || state.journal.length);
   return [
     { label: "Ollama", value: state.modelsOk === null ? "checking" : state.modelsOk ? "online" : "offline", status: state.modelsOk ? "ok" : state.modelsOk === false ? "bad" : "muted", detail: state.modelsOk ? `${state.models.length} local models` : "start Ollama or check endpoint" },
     { label: "Model", value: selectedModel, status: selectedModel === "auto route" ? "muted" : "ok", detail: selectedModel === "auto route" ? "server routing enabled" : "manual override" },
     { label: "Tools", value: `${plannerSafeToolCount()}/${toolTotal || "-"}`, status: toolTotal ? "ok" : "bad", detail: "planner-safe / runtime" },
-    { label: "Workspace", value: adapterTotal ? `${adapterTotal} adapters` : "workspace", status: adapterTotal ? "ok" : "warn", detail: adapterTotal ? "adapter inventory ready" : "no adapters loaded yet" },
+    { label: "Mode", value: state.settings.mode || "dev", status: "muted", detail: state.settings.mode === "user" ? "clean interface" : "developer surfaces" },
     { label: "Journal", value: journalKnown ? "active" : "empty", status: "muted", detail: state.journal.length ? `${state.journal.length} events loaded` : "events appear after requests" }
   ];
 }
@@ -761,9 +1321,11 @@ function renderSessions() {
   const root = $("sessionList");
   root.innerHTML = "";
   const query = state.sessionSearchQuery.trim().toLowerCase();
-  const sessions = query
-    ? state.sessions.filter((session) => JSON.stringify(session).toLowerCase().includes(query))
-    : state.sessions;
+  const activeSessions = state.sessions.filter((session) => !session.archived);
+  const sessions = (query
+    ? activeSessions.filter((session) => JSON.stringify(session).toLowerCase().includes(query))
+    : activeSessions)
+    .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || new Date(b.messages?.at(-1)?.createdAt || b.createdAt) - new Date(a.messages?.at(-1)?.createdAt || a.createdAt));
   if (!sessions.length) {
     root.innerHTML = `<div class="session-item diagnostic-card"><strong>No matching chats</strong><span>Search did not match local session titles or messages.</span></div>`;
     renderRecentSessions();
@@ -771,19 +1333,21 @@ function renderSessions() {
   }
   sessions.forEach((session) => {
     const item = document.createElement("div");
-    item.className = `session-item clickable-card ${session.id === state.activeSessionId ? "active" : ""}`;
+    item.className = `session-item clickable-card ${session.id === state.activeSessionId ? "active" : ""} ${session.pinned ? "pinned" : ""}`;
     const count = session.messages.length;
     const updated = session.messages.at(-1)?.createdAt || session.createdAt;
     item.innerHTML = `
       <button class="session-main" data-action="open" title="Open session">
-        <strong>${escapeHtml(session.title)}</strong>
+        <strong>${session.pinned ? "★ " : ""}${escapeHtml(session.title)}</strong>
         <span>${count} messages · ${new Date(updated).toLocaleString()}</span>
       </button>
-      <div class="session-actions">
-        <button class="ghost-button" data-action="details" title="Show session details">Details</button>
-        <button class="ghost-button" data-action="rename" title="Rename session">Rename</button>
-        <button class="danger-button" data-action="delete" title="Delete session">Delete</button>
-      </div>`;
+      <details class="session-menu"><summary aria-label="Chat menu">⋯</summary><div class="session-menu-popover">
+        <button class="ghost-button" data-action="pin">${session.pinned ? "Unpin" : "Pin"}</button>
+        <button class="ghost-button" data-action="rename">Rename</button>
+        <button class="ghost-button" data-action="share">Share</button>
+        <button class="ghost-button" data-action="archive">Archive</button>
+        <button class="danger-button" data-action="delete">Delete</button>
+      </div></details>`;
     item.querySelector("[data-action=\"open\"]").addEventListener("click", (event) => {
       if (event.altKey) return openSessionDetail(session);
       state.activeSessionId = session.id;
@@ -791,19 +1355,45 @@ function renderSessions() {
       renderAll();
       setActivePage("chat");
     });
-    item.querySelector("[data-action=\"details\"]").addEventListener("click", (event) => { event.stopPropagation(); openSessionDetail(session); });
+    item.querySelector("[data-action=\"pin\"]").addEventListener("click", (event) => { event.stopPropagation(); togglePinSession(session.id); });
     item.querySelector("[data-action=\"rename\"]").addEventListener("click", (event) => { event.stopPropagation(); renameSession(session.id); });
+    item.querySelector("[data-action=\"share\"]").addEventListener("click", (event) => { event.stopPropagation(); shareSession(session.id); });
+    item.querySelector("[data-action=\"archive\"]").addEventListener("click", (event) => { event.stopPropagation(); archiveSession(session.id); });
     item.querySelector("[data-action=\"delete\"]").addEventListener("click", (event) => { event.stopPropagation(); requestDeleteSession(session.id); });
+    wireFloatingSessionMenus(item);
     item.addEventListener("dblclick", () => openSessionDetail(session));
     root.appendChild(item);
   });
+  renderArchiveList();
   renderRecentSessions();
+}
+
+function renderArchiveList() {
+  const root = $("archiveList");
+  const count = $("archiveCount");
+  if (!root) return;
+  const archived = state.sessions.filter((session) => session.archived).sort((a, b) => new Date(b.messages?.at(-1)?.createdAt || b.createdAt) - new Date(a.messages?.at(-1)?.createdAt || a.createdAt));
+  if (count) count.textContent = String(archived.length);
+  if (!archived.length) {
+    root.innerHTML = `<div class="session-item diagnostic-card"><span>No archived chats.</span></div>`;
+    return;
+  }
+  root.innerHTML = "";
+  archived.forEach((session) => {
+    const item = document.createElement("div");
+    item.className = "session-item archived clickable-card";
+    item.innerHTML = `<strong>${escapeHtml(session.title || "Archived chat")}</strong><span>${session.messages?.length || 0} messages</span><div class="session-actions"><button class="ghost-button" data-action="restore">Restore</button><button class="danger-button" data-action="delete">Delete forever</button></div>`;
+    item.querySelector('[data-action="restore"]').addEventListener("click", (event) => { event.stopPropagation(); restoreSession(session.id); });
+    item.querySelector('[data-action="delete"]').addEventListener("click", (event) => { event.stopPropagation(); requestDeleteSession(session.id); });
+    item.addEventListener("dblclick", () => openSessionDetail(session));
+    root.appendChild(item);
+  });
 }
 
 function renderRecentSessions() {
   const root = $("recentSessionsPullout");
   const sidebarRoot = $("sidebarSessionHistory");
-  const recent = [...state.sessions]
+  const recent = [...state.sessions].filter((session) => !session.archived)
     .sort((a, b) => new Date(b.messages?.at(-1)?.createdAt || b.createdAt) - new Date(a.messages?.at(-1)?.createdAt || a.createdAt))
     .slice(0, 6);
   renderSidebarSessionHistory(sidebarRoot, recent);
@@ -832,15 +1422,213 @@ function recentSessionButtonHtml(session) {
   const snippet = String(lastMessage?.content || "New conversation").replace(/\s+/g, " ").trim().slice(0, 72);
   const updated = session.messages?.at(-1)?.createdAt || session.createdAt;
   return `
-    <button class="recent-session-button ${session.id === state.activeSessionId ? "active" : ""}" data-session-id="${escapeHtml(session.id)}">
-      <strong>${escapeHtml(session.title || "New session")}</strong>
-      <span>${escapeHtml(snippet || `${session.messages?.length || 0} messages`)}</span>
-      <small>${session.messages?.length || 0} messages · ${new Date(updated).toLocaleDateString()}</small>
-    </button>`;
+    <div class="recent-session-row ${session.id === state.activeSessionId ? "active" : ""}">
+      <button class="recent-session-button" data-session-id="${escapeHtml(session.id)}">
+        <strong>${session.pinned ? "★ " : ""}${escapeHtml(session.title || "New session")}</strong>
+        <span>${escapeHtml(snippet || `${session.messages?.length || 0} messages`)}</span>
+        <small>${session.messages?.length || 0} messages · ${new Date(updated).toLocaleDateString()}</small>
+      </button>
+      <details class="session-menu compact-session-menu"><summary>⋯</summary><div class="session-menu-popover">
+        <button class="ghost-button" data-session-menu="pin" data-session-id="${escapeHtml(session.id)}">${session.pinned ? "Unpin" : "Pin"}</button>
+        <button class="ghost-button" data-session-menu="rename" data-session-id="${escapeHtml(session.id)}">Rename</button>
+        <button class="ghost-button" data-session-menu="share" data-session-id="${escapeHtml(session.id)}">Share</button>
+        <button class="ghost-button" data-session-menu="archive" data-session-id="${escapeHtml(session.id)}">Archive</button>
+        <button class="danger-button" data-session-menu="delete" data-session-id="${escapeHtml(session.id)}">Delete</button>
+      </div></details>
+    </div>`;
+}
+
+function sidebarSessions() {
+  const query = state.sessionSearchQuery.trim().toLowerCase();
+
+  return state.sessions
+    .filter((session) => !session.archived)
+    .filter((session) => {
+      if (!query) return true;
+      return JSON.stringify(session).toLowerCase().includes(query);
+    })
+    .sort((a, b) =>
+      Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+      new Date(b.messages?.at(-1)?.createdAt || b.createdAt) -
+      new Date(a.messages?.at(-1)?.createdAt || a.createdAt)
+    );
+}
+
+function renderSidebarSessions() {
+  const root = $("sidebarSessionHistory");
+  const count = $("sidebarChatCount");
+  if (!root) return;
+
+  const sessions = sidebarSessions();
+  if (count) count.textContent = String(sessions.length);
+
+  if (!sessions.length) {
+    root.innerHTML = `
+      <div class="sidebar-empty-chat">
+        <strong>No chats found</strong>
+        <span>Start a new chat or clear the search.</span>
+      </div>`;
+    return;
+  }
+
+  const pinned = sessions.filter((session) => session.pinned);
+  const recent = sessions.filter((session) => !session.pinned);
+
+  root.innerHTML = `
+    ${pinned.length ? sidebarSessionGroupHtml("Pinned", pinned) : ""}
+    ${sidebarSessionGroupHtml("Recent", recent)}
+  `;
+
+  wireSidebarSessionRows(root);
+}
+
+function sidebarSessionGroupHtml(label, sessions) {
+  if (!sessions.length) return "";
+  return `
+    <div class="sidebar-chat-group">
+      <div class="sidebar-chat-group-title">${escapeHtml(label)}</div>
+      ${sessions.map(sidebarSessionRowHtml).join("")}
+    </div>
+  `;
+}
+
+function sidebarSessionRowHtml(session) {
+  const lastMessage = [...(session.messages || [])]
+    .reverse()
+    .find((message) => String(message.content || "").trim());
+
+  const snippet = String(lastMessage?.content || "New conversation")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 78);
+
+  return `
+    <div class="sidebar-chat-row ${session.id === state.activeSessionId ? "active" : ""}" data-session-row="${escapeHtml(session.id)}">
+      <button class="sidebar-chat-open" data-open-session="${escapeHtml(session.id)}">
+        <strong>${escapeHtml(session.title || "New session")}</strong>
+        <span>${escapeHtml(snippet)}</span>
+      </button>
+      <button class="sidebar-chat-menu-button" data-open-session-menu="${escapeHtml(session.id)}" aria-label="Chat options">⋯</button>
+    </div>
+  `;
+}
+
+function wireSidebarSessionRows(root) {
+  root.querySelectorAll("[data-open-session]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeSessionId = button.dataset.openSession;
+      closeSidebarSessionMenu();
+      persist();
+      renderAll();
+      setActivePage("chat");
+      document.body.classList.remove("mobile-left-open");
+    });
+  });
+
+  root.querySelectorAll("[data-open-session-menu]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openSidebarSessionMenu(button.dataset.openSessionMenu, button);
+    });
+  });
+}
+
+let activeSidebarMenuSessionId = null;
+
+function openSidebarSessionMenu(sessionId, anchor) {
+  const menu = $("sidebarSessionMenu");
+  const session = state.sessions.find((candidate) => candidate.id === sessionId);
+  if (!menu || !session || !anchor) return;
+
+  activeSidebarMenuSessionId = sessionId;
+
+  menu.querySelector('[data-session-menu="pin"]').textContent = session.pinned ? "Unpin" : "Pin";
+
+  const rect = anchor.getBoundingClientRect();
+  const menuWidth = 170;
+  const menuHeight = 210;
+
+  const left = Math.min(
+    window.innerWidth - menuWidth - 10,
+    Math.max(10, rect.right - menuWidth)
+  );
+
+  const top = Math.min(
+    window.innerHeight - menuHeight - 10,
+    Math.max(10, rect.bottom + 6)
+  );
+
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  menu.hidden = false;
+}
+
+function closeSidebarSessionMenu() {
+  const menu = $("sidebarSessionMenu");
+  if (menu) menu.hidden = true;
+  activeSidebarMenuSessionId = null;
+}
+
+function wireSidebarSessionMenu() {
+  const menu = $("sidebarSessionMenu");
+  if (!menu) return;
+
+  menu.querySelectorAll("[data-session-menu]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+
+      const sessionId = activeSidebarMenuSessionId;
+      if (!sessionId) return;
+
+      const action = button.dataset.sessionMenu;
+      closeSidebarSessionMenu();
+
+      if (action === "pin") togglePinSession(sessionId);
+      if (action === "rename") renameSession(sessionId);
+      if (action === "share") shareSession(sessionId);
+      if (action === "archive") archiveSession(sessionId);
+      if (action === "delete") requestDeleteSession(sessionId);
+    });
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!menu.hidden && !menu.contains(event.target)) {
+      closeSidebarSessionMenu();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeSidebarSessionMenu();
+    }
+  });
+
+  window.addEventListener("resize", closeSidebarSessionMenu);
+  window.addEventListener("scroll", closeSidebarSessionMenu, true);
+}
+
+function wireSidebarSearch() {
+  const button = $("sidebarSearchBtn");
+  const shell = $("sidebarSearchShell");
+  const input = $("sidebarSearchInput");
+
+  if (!button || !shell || !input) return;
+
+  button.addEventListener("click", () => {
+    shell.hidden = !shell.hidden;
+    if (!shell.hidden) input.focus();
+  });
+
+  input.addEventListener("input", () => {
+    state.sessionSearchQuery = input.value;
+    renderSidebarSessions();
+    renderSessions();
+  });
 }
 
 function wireSessionHistoryButtons(root) {
   root.querySelectorAll("[data-session-id]").forEach((button) => {
+    if (button.dataset.sessionMenu) return;
     button.addEventListener("click", (event) => {
       event.stopPropagation();
       state.activeSessionId = button.dataset.sessionId;
@@ -851,6 +1639,55 @@ function wireSessionHistoryButtons(root) {
       setActivePage("chat");
     });
   });
+  root.querySelectorAll("[data-session-menu]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const id = button.dataset.sessionId;
+      if (button.dataset.sessionMenu === "pin") togglePinSession(id);
+      if (button.dataset.sessionMenu === "rename") renameSession(id);
+      if (button.dataset.sessionMenu === "share") shareSession(id);
+      if (button.dataset.sessionMenu === "archive") archiveSession(id);
+      if (button.dataset.sessionMenu === "delete") requestDeleteSession(id);
+    });
+  });
+  wireFloatingSessionMenus(root);
+}
+
+function wireFloatingSessionMenus(root) {
+  root.querySelectorAll(".session-menu").forEach((menu) => {
+    menu.addEventListener("toggle", () => {
+      if (!menu.open) return;
+      document.querySelectorAll(".session-menu[open]").forEach((candidate) => {
+        if (candidate !== menu) candidate.open = false;
+      });
+      positionFloatingSessionMenu(menu);
+    });
+  });
+}
+
+function positionFloatingSessionMenu(menu) {
+  const popover = menu.querySelector(".session-menu-popover");
+  const summary = menu.querySelector("summary");
+  if (!popover || !summary) return;
+
+  const rect = summary.getBoundingClientRect();
+  const width = Math.min(150, window.innerWidth - 24);
+  const height = 190;
+
+  const left = Math.min(
+    window.innerWidth - width - 12,
+    Math.max(12, rect.right - width)
+  );
+
+  const below = rect.bottom + 6;
+  const above = rect.top - height - 6;
+  const top = below + height > window.innerHeight
+    ? Math.max(12, above)
+    : below;
+
+  popover.style.width = `${width}px`;
+  popover.style.left = `${left}px`;
+  popover.style.top = `${top}px`;
 }
 
 function toggleRecentSessionsPullout() {
@@ -1074,8 +1911,9 @@ function renderActivityBox(node, message) {
     return;
   }
 
+  const wasHidden = box.hidden;
   box.hidden = false;
-  box.open = Boolean(state.settings.openThinking);
+  if (wasHidden) box.open = Boolean(state.settings.openThinking);
   title.textContent = hasThinking ? (hasTools ? "Thinking + tool use" : "Thinking") : "Tool use";
   meta.textContent = hasTools ? `${calls.length} tool${calls.length === 1 ? "" : "s"}` : "";
   thinkingContent.hidden = !hasThinking;
@@ -1112,10 +1950,18 @@ function formatActivityThinking(thinking, calls) {
 }
 
 function renderToolCalls(root, calls, { nested = false } = {}) {
+  const openToolKeys = new Set(
+    Array.from(root.querySelectorAll(".tool-call[open]"))
+      .map((node) => node.dataset.toolKey)
+      .filter(Boolean)
+  );
   root.innerHTML = "";
-  calls.forEach((call) => {
+  calls.forEach((call, index) => {
     const card = document.createElement(nested ? "details" : "section");
     card.className = `tool-call clickable-card${nested ? " nested-tool-call" : ""}`;
+    const toolKey = toolCallRenderKey(call, index);
+    card.dataset.toolKey = toolKey;
+    if (nested && openToolKeys.has(toolKey)) card.open = true;
     const pending = call.ok === null || call.data?.status === "running";
     const rawSummary = call.summary || JSON.stringify(call.data ?? call, null, 2);
     const summary = escapeHtml(String(rawSummary).length > 900 ? `${String(rawSummary).slice(0, 900)}\n... [open details for full output]` : rawSummary);
@@ -1133,6 +1979,12 @@ function renderToolCalls(root, calls, { nested = false } = {}) {
     });
     root.appendChild(card);
   });
+}
+
+function toolCallRenderKey(call, index) {
+  const name = call.tool_name || call.name || "tool";
+  const args = JSON.stringify(call.data?.arguments || call.arguments || {});
+  return `${index}:${name}:${args}`;
 }
 
 function collectSources(message) {
@@ -1304,6 +2156,10 @@ function appendBenchmarkProfileOptions(select, seen, { includeDisabled = false }
 
 function renderModelMeta(message = "") {
   const root = $("modelMeta");
+  if (!root) {
+    updateModelMeta();
+    return;
+  }
   if (message) {
     root.innerHTML = `<div class="model-card clickable-card"><span>${escapeHtml(message)}</span></div>`;
     return;
@@ -1316,6 +2172,10 @@ function updateModelMeta() {
   const profile = activeModelProfiles().find((item) => item.model === value) || null;
   const live = state.models.find((item) => item.name === value || item.model === value) || null;
   const root = $("modelMeta");
+  const metaText = $("modelMetaText");
+  const label = !value ? "Auto route" : `${profile?.category || live?.details?.family || "local"}${live?.size ? ` · ${prettyBytes(live.size)}` : ""}`;
+  if (metaText) metaText.textContent = !value ? "Auto route selects a model per request." : label;
+  if (!root) return;
   if (!value) {
     root.innerHTML = `<div class="model-card clickable-card"><strong>Auto route</strong><span>Server picks per request.</span></div>`;
   } else {
@@ -1345,6 +2205,21 @@ function populateSettingsModelSelect() {
   });
   appendBenchmarkProfileOptions(select, seen);
   select.value = current;
+}
+
+function renderModelOptionControls() {
+  const stepFor = (key) => ["temperature", "top_p", "min_p", "typical_p", "repeat_penalty", "presence_penalty", "frequency_penalty"].includes(key) ? "0.01" : "1";
+  Object.entries(MODEL_OPTION_GROUPS).forEach(([rootId, keys]) => {
+    const root = $(rootId);
+    if (!root) return;
+    root.innerHTML = keys.map((key) => {
+      const label = MODEL_OPTION_LABELS[key] || key.replaceAll("_", " ");
+      if (MODEL_BOOLEAN_OPTION_KEYS.includes(key)) {
+        return `<label class="setting-line compact-setting-line"><span>${escapeHtml(label)}</span><input id="settingsModel_${escapeHtml(key)}" type="checkbox" /></label>`;
+      }
+      return `<label class="number-field"><span>${escapeHtml(label)}</span><input id="settingsModel_${escapeHtml(key)}" type="number" step="${stepFor(key)}" /></label>`;
+    }).join("");
+  });
 }
 
 async function loadTools() {
@@ -1586,12 +2461,15 @@ function buildSystemPrompt() {
 function buildModelOptions() {
   const opts = state.settings.modelOptions || {};
   const out = {};
-  const numericKeys = ["temperature", "num_ctx", "top_p", "top_k", "repeat_penalty", "seed", "num_predict"];
-  numericKeys.forEach((key) => {
+  MODEL_NUMERIC_OPTION_KEYS.forEach((key) => {
     const value = Number(opts[key]);
     if (!Number.isFinite(value)) return;
-    if ((key === "seed" || key === "num_predict") && value < 0) return;
+    if (["seed", "num_predict", "num_keep", "num_gpu"].includes(key) && value < 0) return;
+    if (["num_thread"].includes(key) && value <= 0) return;
     out[key] = value;
+  });
+  MODEL_BOOLEAN_OPTION_KEYS.forEach((key) => {
+    if (typeof opts[key] === "boolean") out[key] = opts[key];
   });
   if (Array.isArray(opts.stop) && opts.stop.length) out.stop = opts.stop.filter(Boolean);
   if (opts.keep_alive) out.keep_alive = String(opts.keep_alive);
@@ -2046,10 +2924,12 @@ function syncSettingsFromMainControls() {
 
 function applySettingsToMainControls() {
   document.documentElement.dataset.density = state.settings.density || "comfortable";
-  $("streamToggle").checked = Boolean(state.settings.stream);
-  $("confirmToggle").checked = Boolean(state.settings.confirm);
-  $("memoryToggle").checked = Boolean(state.settings.attachMemories);
-  $("autoScrollToggle").checked = Boolean(state.settings.autoScroll);
+
+  if ($("streamToggle")) $("streamToggle").checked = Boolean(state.settings.stream);
+  if ($("confirmToggle")) $("confirmToggle").checked = Boolean(state.settings.confirm);
+  if ($("memoryToggle")) $("memoryToggle").checked = Boolean(state.settings.attachMemories);
+  if ($("autoScrollToggle")) $("autoScrollToggle").checked = Boolean(state.settings.autoScroll);
+
   applySettingsVisuals();
 }
 
@@ -2068,6 +2948,7 @@ function applySettingsVisuals() {
   document.documentElement.style.setProperty("--line", hexToRgba(theme.accent || DEFAULT_SETTINGS.theme.accent, 0.13));
   document.documentElement.style.setProperty("--line-strong", hexToRgba(theme.accent || DEFAULT_SETTINGS.theme.accent, 0.25));
   document.documentElement.style.setProperty("--font", fontStack(theme.font));
+  applyModeVisibility();
 }
 
 function renderSystemPromptControls() {
@@ -2225,7 +3106,10 @@ function handleAvatarUpload(kind, file) {
 
 function syncSettingsModal() {
   populateSettingsModelSelect();
+  renderModelOptionControls();
+  renderThemePresetSelect();
   $("settingsModelSelect").value = $("modelSelect").value || "";
+  $("settingsModeSelect").value = state.settings.mode || "dev";
   $("settingsDensitySelect").value = state.settings.density || "comfortable";
   $("settingsStreamToggle").checked = Boolean(state.settings.stream);
   $("settingsConfirmToggle").checked = Boolean(state.settings.confirm);
@@ -2249,13 +3133,14 @@ function syncSettingsModal() {
   const runtimeTimeouts = state.settings.runtimeTimeouts || DEFAULT_SETTINGS.runtimeTimeouts;
   $("settingsOllamaTimeout").value = runtimeTimeouts.ollama ?? DEFAULT_SETTINGS.runtimeTimeouts.ollama;
   $("settingsToolTimeout").value = runtimeTimeouts.tools ?? DEFAULT_SETTINGS.runtimeTimeouts.tools;
-  $("settingsTemperature").value = opts.temperature ?? 0.2;
-  $("settingsNumCtx").value = opts.num_ctx ?? 4096;
-  $("settingsTopP").value = opts.top_p ?? 0.95;
-  $("settingsTopK").value = opts.top_k ?? 40;
-  $("settingsRepeatPenalty").value = opts.repeat_penalty ?? 1.1;
-  $("settingsSeed").value = opts.seed ?? -1;
-  $("settingsNumPredict").value = opts.num_predict ?? -1;
+  MODEL_NUMERIC_OPTION_KEYS.forEach((key) => {
+    const input = $(`settingsModel_${key}`);
+    if (input) input.value = opts[key] ?? DEFAULT_SETTINGS.modelOptions[key] ?? "";
+  });
+  MODEL_BOOLEAN_OPTION_KEYS.forEach((key) => {
+    const input = $(`settingsModel_${key}`);
+    if (input) input.checked = Boolean(opts[key] ?? DEFAULT_SETTINGS.modelOptions[key]);
+  });
   $("settingsKeepAlive").value = opts.keep_alive ?? "";
   $("settingsStopSequences").value = Array.isArray(opts.stop) ? opts.stop.join("\n") : "";
   renderSystemPromptControls();
@@ -2276,6 +3161,149 @@ function renderSettingsMemoryStats() {
     <div><strong>${state.memories.length}</strong><span>memories</span></div>
     <div><strong>${state.memories.filter((m) => m.pinned).length}</strong><span>pinned</span></div>
     <div><strong>${chars}</strong><span>chars injected when enabled</span></div>`;
+}
+
+function renderThemePresetSelect() {
+  const select = $("themePresetSelect");
+  if (!select) return;
+  select.innerHTML = '<option value="">Custom</option>' + Object.entries(THEME_PRESETS).map(([id, preset]) => `<option value="${escapeHtml(id)}">${escapeHtml(preset.label)}</option>`).join("");
+}
+
+function applyThemePreset(id) {
+  const preset = THEME_PRESETS[id];
+  if (!preset) return;
+  state.settings.theme = { primary: preset.primary, accent: preset.accent, accentTwo: preset.accentTwo, panel: preset.panel, text: preset.text, font: preset.font };
+  ["Primary", "Accent", "AccentTwo", "Panel", "Text"].forEach((name) => {
+    const key = name.charAt(0).toLowerCase() + name.slice(1);
+    const input = $(`theme${name}Color`);
+    if (input) input.value = state.settings.theme[key];
+  });
+  if ($("themeFontSelect")) $("themeFontSelect").value = state.settings.theme.font;
+  applySettingsVisuals();
+}
+
+function renderHelp() {
+  const nav = $("helpTopicNav");
+  const body = $("helpTopicBody");
+  if (!nav || !body) return;
+
+  const previousActive = nav.querySelector(".active")?.dataset.helpTopic;
+  const active = HELP_TOPICS.some((topic) => topic.id === previousActive)
+    ? previousActive
+    : HELP_TOPICS[0].id;
+
+  nav.innerHTML = HELP_TOPICS.map((topic) => `
+    <button class="help-topic-button ${topic.id === active ? "active" : ""}" data-help-topic="${escapeHtml(topic.id)}">
+      <strong>${escapeHtml(topic.title)}</strong>
+      <span>${escapeHtml(topic.summary || "")}</span>
+    </button>
+  `).join("");
+
+  const topic = HELP_TOPICS.find((item) => item.id === active) || HELP_TOPICS[0];
+
+  const asArray = (value) => Array.isArray(value) ? value : [value].filter(Boolean);
+
+  const renderParagraphs = (items) => asArray(items)
+    .map((item) => `<p>${escapeHtml(item)}</p>`)
+    .join("");
+
+  const renderList = (items, className) => Array.isArray(items) && items.length
+    ? `<ul class="${className}">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+    : "";
+
+  const sections = Array.isArray(topic.sections) && topic.sections.length
+    ? topic.sections
+    : [{ title: "Overview", body: topic.body || "" }];
+
+  body.innerHTML = `
+    <div class="help-topic-title-row">
+      <div>
+        <p class="eyebrow">Help guide</p>
+        <h2>${escapeHtml(topic.title)}</h2>
+      </div>
+      ${topic.summary ? `<p class="help-topic-meta">${escapeHtml(topic.summary)}</p>` : ""}
+    </div>
+
+    ${sections.map((section) => `
+      <section class="help-topic-card">
+        <h3>${escapeHtml(section.title)}</h3>
+        ${renderParagraphs(section.body)}
+      </section>
+    `).join("")}
+
+    ${Array.isArray(topic.checklist) && topic.checklist.length ? `
+      <section class="help-topic-card help-callout">
+        <h3>Checklist</h3>
+        ${renderList(topic.checklist, "help-check-list")}
+      </section>
+    ` : ""}
+
+    <section class="help-topic-card">
+      <h3>Useful commands and actions</h3>
+      <div class="copy-command-list">
+        ${(topic.commands || []).map((command) => `
+          <button class="copy-command" data-copy-command="${escapeHtml(command)}">
+            <code>${escapeHtml(command)}</code>
+            <span>Copy</span>
+          </button>
+        `).join("")}
+      </div>
+    </section>
+
+    <section class="help-topic-card">
+      <h3>Useful links</h3>
+      <ul class="detail-list">
+        <li><a href="https://ollama.com/library" target="_blank" rel="noopener noreferrer">Ollama model library</a></li>
+        <li><a href="https://github.com/Small-ed1/local-llm-tooling-showcase" target="_blank" rel="noopener noreferrer">Project repository</a></li>
+      </ul>
+    </section>
+  `;
+
+  nav.querySelectorAll("[data-help-topic]").forEach((button) => {
+    button.addEventListener("click", () => {
+      nav.querySelectorAll("button").forEach((candidate) => {
+        candidate.classList.toggle("active", candidate === button);
+      });
+      renderHelp();
+    });
+  });
+
+  body.querySelectorAll("[data-copy-command]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(button.dataset.copyCommand || "");
+      const label = button.querySelector("span");
+      if (!label) return;
+      const original = label.textContent;
+      label.textContent = "Copied";
+      window.setTimeout(() => {
+        label.textContent = original || "Copy";
+      }, 900);
+    });
+  });
+}
+
+function applyModeVisibility() {
+  const userMode = state.settings.mode === "user";
+
+  document.body.classList.toggle("user-mode", userMode);
+
+  document.querySelectorAll(".dev-only").forEach((node) => {
+    node.hidden = userMode;
+  });
+
+  document
+    .querySelectorAll('[data-page-target="tools"], [data-page-target="journal"], [data-dev-sidebar-section]')
+    .forEach((node) => {
+      node.hidden = userMode;
+      node.setAttribute("aria-hidden", String(userMode));
+      if (userMode && node.classList.contains("active")) {
+        node.classList.remove("active");
+      }
+    });
+
+  if (userMode && ["tools", "journal"].includes(state.activePage)) {
+    setActivePage("chat", { closeDrawer: false });
+  }
 }
 
 function openSettings() {
@@ -2305,59 +3333,132 @@ function updateSettingsButtonState() {
   button.setAttribute("aria-expanded", String(isOpen));
 }
 
+function settingValue(id, fallback = "") {
+  return $(id)?.value ?? fallback;
+}
+
+function settingChecked(id, fallback = false) {
+  return $(id)?.checked ?? fallback;
+}
+
+function settingNumber(id, fallback, min = -Infinity, max = Infinity) {
+  const raw = Number(settingValue(id, fallback));
+  const value = Number.isFinite(raw) ? raw : fallback;
+  return Math.max(min, Math.min(max, value));
+}
+
+function readBehaviorSettingsFromModal() {
+  state.settings.mode = $("settingsModeSelect")?.value || state.settings.mode || "dev";
+  state.settings.density = $("settingsDensitySelect")?.value || state.settings.density || "comfortable";
+
+  state.settings.stream = $("settingsStreamToggle")?.checked ?? state.settings.stream;
+  state.settings.confirm = $("settingsConfirmToggle")?.checked ?? state.settings.confirm;
+  state.settings.autoScroll = $("settingsAutoScrollToggle")?.checked ?? state.settings.autoScroll;
+
+  state.settings.openThinking = $("settingsOpenThinkingToggle")?.checked ?? state.settings.openThinking;
+  state.settings.detailsEnabled = $("settingsDetailsToggle")?.checked ?? state.settings.detailsEnabled;
+  state.settings.compactTools = $("settingsCompactToolsToggle")?.checked ?? state.settings.compactTools;
+
+  state.settings.journalLimit = Math.max(5, Number($("settingsJournalLimit")?.value) || state.settings.journalLimit || 50);
+  state.settings.messageWidth = Math.max(
+    52,
+    Math.min(120, Number($("settingsMessageWidth")?.value) || state.settings.messageWidth || 78)
+  );
+}
+
+function commitBehaviorSettingsFromModal() {
+  readBehaviorSettingsFromModal();
+  applySettingsToMainControls();
+  applyModeVisibility();
+  updatePageChrome();
+  renderRuntimeStatus();
+  persist({ syncControls: false });
+}
+
 function saveSettings() {
-  $("modelSelect").value = $("settingsModelSelect").value;
-  state.settings.density = $("settingsDensitySelect").value;
-  state.settings.stream = $("settingsStreamToggle").checked;
-  state.settings.confirm = $("settingsConfirmToggle").checked;
-  state.settings.attachMemories = $("settingsMemoryToggle").checked;
-  state.settings.autoScroll = $("settingsAutoScrollToggle").checked;
-  state.settings.openThinking = $("settingsOpenThinkingToggle").checked;
-  state.settings.detailsEnabled = $("settingsDetailsToggle").checked;
-  state.settings.compactTools = $("settingsCompactToolsToggle").checked;
-  state.settings.journalLimit = Math.max(5, Number($("settingsJournalLimit").value) || 50);
-  state.settings.messageWidth = Math.max(52, Math.min(120, Number($("settingsMessageWidth").value) || 78));
+  const selectedModel = settingValue("settingsModelSelect", $("modelSelect")?.value || "");
+
+  if ($("modelSelect")) {
+    $("modelSelect").value = selectedModel;
+  }
+
+  readBehaviorSettingsFromModal();
+
+  state.settings.attachMemories =
+    $("settingsMemoryToggle")?.checked ?? state.settings.attachMemories;
+
   state.settings.theme = {
-    primary: $("themePrimaryColor").value || DEFAULT_SETTINGS.theme.primary,
-    accent: $("themeAccentColor").value || DEFAULT_SETTINGS.theme.accent,
-    accentTwo: $("themeAccentTwoColor").value || DEFAULT_SETTINGS.theme.accentTwo,
-    panel: $("themePanelColor").value || DEFAULT_SETTINGS.theme.panel,
-    text: $("themeTextColor").value || DEFAULT_SETTINGS.theme.text,
-    font: $("themeFontSelect").value || DEFAULT_SETTINGS.theme.font
+    primary: settingValue("themePrimaryColor", state.settings.theme?.primary || DEFAULT_SETTINGS.theme.primary),
+    accent: settingValue("themeAccentColor", state.settings.theme?.accent || DEFAULT_SETTINGS.theme.accent),
+    accentTwo: settingValue("themeAccentTwoColor", state.settings.theme?.accentTwo || DEFAULT_SETTINGS.theme.accentTwo),
+    panel: settingValue("themePanelColor", state.settings.theme?.panel || DEFAULT_SETTINGS.theme.panel),
+    text: settingValue("themeTextColor", state.settings.theme?.text || DEFAULT_SETTINGS.theme.text),
+    font: settingValue("themeFontSelect", state.settings.theme?.font || DEFAULT_SETTINGS.theme.font)
   };
-  state.settings.memoryPrefix = $("settingsMemoryPrefix").value.trim() || DEFAULT_SETTINGS.memoryPrefix;
-  state.settings.responseFormat = $("settingsResponseFormat").value;
+
+  state.settings.memoryPrefix = settingValue("settingsMemoryPrefix", state.settings.memoryPrefix || DEFAULT_SETTINGS.memoryPrefix).trim() || DEFAULT_SETTINGS.memoryPrefix;
+  state.settings.responseFormat = settingValue("settingsResponseFormat", state.settings.responseFormat || "");
+
   state.settings.runtimeTimeouts = {
-    ollama: Math.max(1, Math.min(3600, Number($("settingsOllamaTimeout").value) || DEFAULT_SETTINGS.runtimeTimeouts.ollama)),
-    tools: Math.max(1, Math.min(3600, Number($("settingsToolTimeout").value) || DEFAULT_SETTINGS.runtimeTimeouts.tools))
+    ollama: settingNumber("settingsOllamaTimeout", state.settings.runtimeTimeouts?.ollama || DEFAULT_SETTINGS.runtimeTimeouts.ollama, 1, 3600),
+    tools: settingNumber("settingsToolTimeout", state.settings.runtimeTimeouts?.tools || DEFAULT_SETTINGS.runtimeTimeouts.tools, 1, 3600)
   };
-  state.settings.modelOptions = {
-    temperature: Number($("settingsTemperature").value),
-    num_ctx: Number($("settingsNumCtx").value),
-    top_p: Number($("settingsTopP").value),
-    top_k: Number($("settingsTopK").value),
-    repeat_penalty: Number($("settingsRepeatPenalty").value),
-    seed: Number($("settingsSeed").value),
-    num_predict: Number($("settingsNumPredict").value),
-    keep_alive: $("settingsKeepAlive").value.trim(),
-    stop: $("settingsStopSequences").value.split("\n").map((line) => line.trim()).filter(Boolean)
+
+  const nextOptions = {
+    keep_alive: settingValue("settingsKeepAlive", state.settings.modelOptions?.keep_alive || "").trim(),
+    stop: settingValue("settingsStopSequences", Array.isArray(state.settings.modelOptions?.stop) ? state.settings.modelOptions.stop.join("\n") : "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
   };
-  state.activeSystemPromptId = $("settingsPromptSelect").value || null;
-  if ($("systemPromptTitleInput").value.trim() || $("settingsSystemPromptInput").value.trim()) saveSystemPromptFromEditor();
+
+  MODEL_NUMERIC_OPTION_KEYS.forEach((key) => {
+    const input = $(`settingsModel_${key}`);
+    if (input) nextOptions[key] = Number(input.value);
+    else if (state.settings.modelOptions && key in state.settings.modelOptions) nextOptions[key] = state.settings.modelOptions[key];
+    else nextOptions[key] = DEFAULT_SETTINGS.modelOptions[key];
+  });
+
+  MODEL_BOOLEAN_OPTION_KEYS.forEach((key) => {
+    const input = $(`settingsModel_${key}`);
+    if (input) nextOptions[key] = input.checked;
+    else if (state.settings.modelOptions && key in state.settings.modelOptions) nextOptions[key] = state.settings.modelOptions[key];
+    else nextOptions[key] = DEFAULT_SETTINGS.modelOptions[key];
+  });
+
+  state.settings.modelOptions = nextOptions;
+
+  if ($("settingsPromptSelect")) {
+    state.activeSystemPromptId = $("settingsPromptSelect").value || null;
+  }
+
+  if (
+    $("systemPromptTitleInput")?.value.trim() ||
+    $("settingsSystemPromptInput")?.value.trim()
+  ) {
+    saveSystemPromptFromEditor();
+  }
+
   state.profile = {
-    name: $("profileNameInput").value.trim(),
-    nickname: $("profileNicknameInput").value.trim(),
-    about: $("profileAboutInput").value.trim(),
-    preferences: $("profilePreferencesInput").value.trim(),
-    other: $("profileOtherInput").value.trim(),
+    name: settingValue("profileNameInput", state.profile.name || "").trim(),
+    nickname: settingValue("profileNicknameInput", state.profile.nickname || "").trim(),
+    about: settingValue("profileAboutInput", state.profile.about || "").trim(),
+    preferences: settingValue("profilePreferencesInput", state.profile.preferences || "").trim(),
+    other: settingValue("profileOtherInput", state.profile.other || "").trim(),
     userAvatar: state.profile.userAvatar || "",
     assistantAvatar: state.profile.assistantAvatar || ""
   };
-  $("systemPromptInput").value = activeSystemPrompt()?.fullPrompt || "";
+
+  if ($("systemPromptInput")) {
+    $("systemPromptInput").value = activeSystemPrompt()?.fullPrompt || "";
+  }
+
   applySettingsToMainControls();
   updateModelMeta();
-  persist();
-  renderChat();
+  applyModeVisibility();
+  renderRuntimeStatus();
+  persist({ syncControls: false });
+  renderAll();
   closeSettings();
   loadJournal();
 }
@@ -2582,8 +3683,41 @@ function bindModalChrome() {
   $("settingsBtn").addEventListener("click", toggleSettings);
   $("closeSettingsBtn").addEventListener("click", closeSettings);
   $("cancelSettingsBtn").addEventListener("click", closeSettings);
-  $("saveSettingsBtn").addEventListener("click", saveSettings);
+  $("saveSettingsBtn")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    saveSettings();
+  });
   document.querySelectorAll(".settings-tab").forEach((button) => button.addEventListener("click", () => switchSettingsTab(button.dataset.settingsTab)));
+
+  [
+    "settingsModeSelect",
+    "settingsDensitySelect",
+    "settingsStreamToggle",
+    "settingsConfirmToggle",
+    "settingsAutoScrollToggle",
+    "settingsOpenThinkingToggle",
+    "settingsDetailsToggle",
+    "settingsCompactToolsToggle",
+    "settingsJournalLimit",
+    "settingsMessageWidth"
+  ].forEach((id) => {
+    const control = $(id);
+    if (!control) return;
+
+    control.addEventListener("change", () => {
+      readBehaviorSettingsFromModal();
+      applySettingsToMainControls();
+      updatePageChrome();
+      persist({ syncControls: false });
+    });
+
+    control.addEventListener("input", () => {
+      readBehaviorSettingsFromModal();
+      applySettingsToMainControls();
+      persist({ syncControls: false });
+    });
+  });
+
   $("settingsClearJournalBtn").addEventListener("click", () => { closeSettings(); requestClearJournal(); });
   $("settingsDeleteAllSessionsBtn")?.addEventListener("click", () => { closeSettings(); requestDeleteAllSessions(); });
   $("settingsExportActiveBtn")?.addEventListener("click", exportSession);
@@ -2599,6 +3733,17 @@ function bindModalChrome() {
   $("saveSystemPromptBtn")?.addEventListener("click", saveSystemPromptFromEditor);
   $("deleteSystemPromptBtn")?.addEventListener("click", deleteActiveSystemPrompt);
   $("draftSystemPromptBtn")?.addEventListener("click", draftSystemPromptFromSettings);
+  $("presetSystemPromptBtn")?.addEventListener("click", loadSystemPromptPreset);
+  $("importSystemPromptBtn")?.addEventListener("click", () => $("systemPromptImportInput")?.click());
+  $("exportSystemPromptBtn")?.addEventListener("click", exportSystemPrompts);
+  $("systemPromptImportInput")?.addEventListener("change", (event) => readImportFile(event.target.files?.[0], importSystemPrompt));
+  $("importProfileBtn")?.addEventListener("click", () => $("profileImportInput")?.click());
+  $("exportProfileBtn")?.addEventListener("click", () => downloadJson("showcase-profile.json", state.profile));
+  $("profileImportInput")?.addEventListener("change", (event) => readImportFile(event.target.files?.[0], importProfile));
+  $("importMemoriesBtn")?.addEventListener("click", () => $("memoriesImportInput")?.click());
+  $("exportMemoriesBtn")?.addEventListener("click", () => downloadJson("showcase-memories.json", { exportedAt: new Date().toISOString(), memories: state.memories }));
+  $("memoriesImportInput")?.addEventListener("change", (event) => readImportFile(event.target.files?.[0], importMemories));
+  $("themePresetSelect")?.addEventListener("change", (event) => applyThemePreset(event.target.value));
   $("profileUserAvatarInput")?.addEventListener("change", (event) => handleAvatarUpload("user", event.target.files?.[0]));
   $("profileAssistantAvatarInput")?.addEventListener("change", (event) => handleAvatarUpload("assistant", event.target.files?.[0]));
   ["themePrimaryColor", "themeAccentColor", "themeAccentTwoColor", "themePanelColor", "themeTextColor", "themeFontSelect"].forEach((id) => {
@@ -2645,6 +3790,39 @@ function bindModalChrome() {
     else if (!$("settingsModal").hidden) closeSettings();
     else closeMobileDrawers();
   });
+  document.addEventListener("click", (event) => {
+    if (event.target.closest(".session-menu")) return;
+    document.querySelectorAll(".session-menu[open]").forEach((menu) => { menu.open = false; });
+  });
+  window.addEventListener("resize", () => document.querySelectorAll(".session-menu[open]").forEach(positionFloatingSessionMenu));
+  document.addEventListener("scroll", () => document.querySelectorAll(".session-menu[open]").forEach(positionFloatingSessionMenu), true);
+}
+
+function bindBehaviorSettingsAutosave() {
+  const behaviorControlIds = new Set([
+    "settingsModeSelect",
+    "settingsDensitySelect",
+    "settingsStreamToggle",
+    "settingsConfirmToggle",
+    "settingsAutoScrollToggle",
+    "settingsOpenThinkingToggle",
+    "settingsDetailsToggle",
+    "settingsCompactToolsToggle",
+    "settingsJournalLimit",
+    "settingsMessageWidth"
+  ]);
+
+  document.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!target || !behaviorControlIds.has(target.id)) return;
+    commitBehaviorSettingsFromModal();
+  });
+
+  document.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!target || !behaviorControlIds.has(target.id)) return;
+    commitBehaviorSettingsFromModal();
+  });
 }
 
 function exportSession() {
@@ -2664,6 +3842,77 @@ function downloadJson(filename, payload) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadText(filename, text, type = "text/plain") {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function readImportFile(file, handler) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.addEventListener("load", () => handler(String(reader.result || ""), file));
+  reader.readAsText(file);
+}
+
+function parseImportText(text) {
+  try { return JSON.parse(text); } catch { return text; }
+}
+
+function importSystemPrompt(text, file) {
+  const parsed = parseImportText(text);
+  const items = Array.isArray(parsed) ? parsed : [parsed];
+  items.forEach((item) => {
+    const prompt = typeof item === "object" && item
+      ? { title: item.title || file.name, shortMessage: item.shortMessage || item.short_message || "Imported prompt", context: item.context || "", fullPrompt: item.fullPrompt || item.full_prompt || item.prompt || item.content || text }
+      : { title: file.name, shortMessage: "Imported text prompt", context: "", fullPrompt: String(item || text) };
+    state.systemPrompts.unshift({ id: uid("prompt"), ...prompt, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  });
+  state.activeSystemPromptId = state.systemPrompts[0]?.id || null;
+  persist();
+  syncSettingsModal();
+}
+
+function exportSystemPrompts() {
+  downloadJson("showcase-system-prompts.json", { exportedAt: new Date().toISOString(), activeSystemPromptId: state.activeSystemPromptId, systemPrompts: state.systemPrompts });
+}
+
+function loadSystemPromptPreset() {
+  const label = SYSTEM_PROMPT_PRESETS.map((preset, index) => `${index + 1}. ${preset.title}`).join("\n");
+  const choice = Number(prompt(`Choose a system prompt preset:\n${label}`, "1"));
+  const preset = SYSTEM_PROMPT_PRESETS[choice - 1];
+  if (!preset) return;
+  state.systemPrompts.unshift({ id: uid("prompt"), ...preset, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  state.activeSystemPromptId = state.systemPrompts[0].id;
+  persist();
+  syncSettingsModal();
+}
+
+function importProfile(text) {
+  const parsed = parseImportText(text);
+  if (typeof parsed === "object" && parsed) state.profile = deepMerge(DEFAULT_PROFILE, parsed.profile || parsed);
+  else state.profile = { ...state.profile, about: String(parsed || "") };
+  persist();
+  syncSettingsModal();
+}
+
+function importMemories(text, file) {
+  const parsed = parseImportText(text);
+  const source = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.memories) ? parsed.memories : [parsed];
+  const imported = source.map((item) => typeof item === "object" && item
+    ? { id: item.id || uid("memory"), title: item.title || item.key || file.name, text: item.text || item.value || item.content || JSON.stringify(item), pinned: Boolean(item.pinned), createdAt: item.createdAt || new Date().toISOString() }
+    : { id: uid("memory"), title: file.name, text: String(item || ""), pinned: false, createdAt: new Date().toISOString() }
+  ).filter((item) => item.text.trim());
+  state.memories = [...imported, ...state.memories];
+  persist();
+  renderMemories();
+  syncSettingsModal();
 }
 
 function clearActiveSession() {
@@ -2699,13 +3948,11 @@ function addMemory() {
 }
 
 function bindPanelDetails() {
-  $("brandCard").addEventListener("click", () => openCollectionDetail("Local LLM Tooling Showcase", "A local-first tool-aware Ollama cockpit with chat, tools, adapters, journal, model settings, benchmarked profiles, and memory support.", { version: "ui-v5-benchmarks", models: state.models.length, benchmarked_profiles: state.benchmarkProfiles.length, tools: state.tools.length, adapters: state.adapters.length }));
   $("modelPanel").addEventListener("dblclick", () => openModelDetail($("modelSelect").value));
   $("sessionsPanel").addEventListener("dblclick", () => openSessionDetail(activeSession()));
   $("memoriesPanel").addEventListener("dblclick", () => openCollectionDetail("Memories", `${state.memories.length} local browser memories.`, state.memories));
-  $("sessionHeader").addEventListener("dblclick", () => openSessionDetail(activeSession()));
   $("toolsPanel").addEventListener("dblclick", () => openCollectionDetail("Tools", `${state.tools.length} available tools.`, { tools: state.tools, tool_cards: state.toolCards }));
-  $("adaptersPanel").addEventListener("dblclick", () => openCollectionDetail("Adapters", `${state.adapters.length} workspace adapters loaded.`, state.adapters));
+  $("adaptersPanel")?.addEventListener("dblclick", () => openCollectionDetail("Adapters", `${state.adapters.length} workspace adapters loaded.`, state.adapters));
   $("journalPanel").addEventListener("dblclick", openJournalSummaryDetail);
   $("overviewPanel")?.addEventListener("dblclick", () => openCollectionDetail("Overview", "Full local runtime overview.", { readiness: runtimeReadiness(), sessions: state.sessions.length, tools: state.tools.length, adapters: state.adapters.length, journal: state.journalStats }));
   $("composerPanel").addEventListener("dblclick", () => openCollectionDetail("Composer", "Prompt composer details and current request options.", { model: $("modelSelect").value || "auto", options: buildModelOptions(), system_prompt_chars: $("systemPromptInput").value.length }));
@@ -2732,9 +3979,33 @@ function bindMobileShell(){
 }
 
 function bindPageShell() {
-  document.querySelectorAll("[data-page-target]").forEach((button) => {
-    button.addEventListener("click", () => setActivePage(button.dataset.pageTarget));
+  document.addEventListener("click", (event) => {
+    const pageButton = event.target.closest("[data-page-target]");
+    if (!pageButton) return;
+
+    const pageName = pageButton.dataset.pageTarget;
+    if (!PAGE_META[pageName]) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    setActivePage(pageName);
+
+    if (window.matchMedia("(max-width: 760px)").matches) {
+      closeMobileDrawers();
+    }
   });
+
+  document.addEventListener("click", (event) => {
+    const saveButton = event.target.closest("#saveSettingsBtn");
+    if (!saveButton) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    saveSettings();
+  });
+
   $("sidebarToggleBtn")?.addEventListener("click", () => setMobilePanel("left"));
 }
 
@@ -2763,12 +4034,12 @@ function bindEvents() {
   $("runAutonomousBtn").addEventListener("click", runAutonomous);
   $("newSessionBtn").addEventListener("click", () => createSession(true));
   $("sidebarNewChatBtn")?.addEventListener("click", (event) => { event.stopPropagation(); createSession(true); });
-  $("sidebarSearchBtn")?.addEventListener("click", (event) => { event.stopPropagation(); searchSessions(); });
-  $("recentsToggleBtn")?.addEventListener("click", (event) => { event.stopPropagation(); toggleRecentSessionsPullout(); });
   $("sidebarCollapseBtn")?.addEventListener("click", (event) => { event.stopPropagation(); toggleSidebarCollapsed(); });
+  wireSidebarSearch();
+  wireSidebarSessionMenu();
   $("addMemoryBtn").addEventListener("click", addMemory);
   $("clearBtn")?.addEventListener("click", clearActiveSession);
-  $("refreshAdaptersBtn").addEventListener("click", loadAdapters);
+  $("refreshAdaptersBtn")?.addEventListener("click", loadAdapters);
   $("refreshJournalBtn").addEventListener("click", loadJournal);
   $("clearJournalBtn").addEventListener("click", requestClearJournal);
   $("systemPromptBtn")?.addEventListener("click", () => {
@@ -2786,6 +4057,7 @@ function bindEvents() {
     $(id).addEventListener("input", persist);
   });
   bindModalChrome();
+  bindBehaviorSettingsAutosave();
   bindPanelDetails();
   bindMobileShell();
   bindPageShell();
@@ -2829,7 +4101,7 @@ async function boot() {
   loadLocalState();
   bindEvents();
   renderAll();
-  await Promise.allSettled([loadModels(), loadTools(), loadAdapters(), loadJournal(), loadRuntime()]);
+  await Promise.allSettled([loadModels(), loadTools(), loadJournal(), loadRuntime()]);
   renderAll();
 }
 

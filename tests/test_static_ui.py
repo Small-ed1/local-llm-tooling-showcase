@@ -48,3 +48,20 @@ def test_static_ui_exposes_runtime_timeout_settings():
     assert 'id="settingsToolTimeout"' in index
     assert "ollama_timeout_seconds" in app
     assert "tool_timeout_seconds" in app
+
+
+def test_static_ui_has_user_mode_archive_imports_and_expanded_ollama_options():
+    index = (ROOT / "src" / "tooling_showcase" / "static" / "index.html").read_text(encoding="utf-8")
+    app = (ROOT / "src" / "tooling_showcase" / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="settingsModeSelect"' in index
+    assert 'id="archiveList"' in index
+    assert 'id="systemPromptImportInput"' in index
+    assert 'id="profileImportInput"' in index
+    assert 'id="memoriesImportInput"' in index
+    assert "num_keep" in app
+    assert "presence_penalty" in app
+    assert "frequency_penalty" in app
+    assert "use_mmap" in app
+    assert "THEME_PRESETS" in app
+    assert "SYSTEM_PROMPT_PRESETS" in app

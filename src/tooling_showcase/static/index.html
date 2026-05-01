@@ -10,48 +10,56 @@
 <body>
   <div class="app-shell">
     <aside class="rail left-rail app-sidebar" aria-label="Workspace navigation">
-      <div class="mobile-drawer-head glass"><strong>Navigation</strong><button class="ghost-button icon-button" data-mobile-close aria-label="Close navigation drawer">×</button></div>
-      <section class="sidebar-identity glass clickable-card" id="brandCard" tabindex="0">
-        <div class="identity-top-row">
+      <div class="mobile-drawer-head glass">
+        <strong>Navigation</strong>
+        <button class="ghost-button icon-button" data-mobile-close aria-label="Close navigation drawer">×</button>
+      </div>
+
+      <section class="chatgpt-sidebar glass" id="sidebarShell">
+        <div class="sidebar-brand-row">
           <div class="brand-mark" aria-hidden="true">LLM</div>
           <div class="brand-copy">
-            <h1>Local LLM Tooling Showcase</h1>
-            <p>Chat-first local tooling cockpit</p>
+            <h1>Local LLM</h1>
+            <p>Tooling Showcase</p>
           </div>
           <button id="sidebarCollapseBtn" class="ghost-button icon-button sidebar-collapse-button" title="Collapse sidebar" aria-label="Collapse sidebar">=</button>
         </div>
-        <div class="session-mini clickable-panel" id="sessionHeader" tabindex="0">
-          <p id="pageEyebrow" class="eyebrow">Chat</p>
-          <h2 id="sessionTitle">New session</h2>
-          <p id="pageSummary" class="page-summary">Ask questions, inspect files, and let tools run in the background.</p>
+
+        <div class="sidebar-primary-actions">
+          <button type="button" id="sidebarNewChatBtn" class="sidebar-action-button primary"><span>New chat</span></button>
+          <button type="button" id="sidebarSearchBtn" class="sidebar-action-button"><span>Search</span></button>
         </div>
-        <div class="sidebar-quick-actions" aria-label="Chat shortcuts">
-          <button id="sidebarNewChatBtn" class="ghost-button quick-label-button" title="New chat">New</button>
-          <button id="sidebarSearchBtn" class="ghost-button quick-label-button" title="Search chats">Search</button>
-          <button id="recentsToggleBtn" class="ghost-button quick-label-button" title="Recent chats">History</button>
-        </div>
-        <section class="sidebar-history" aria-label="Recent session history">
-          <div class="sidebar-history-head"><span>Recent sessions</span><small>local</small></div>
-          <div id="sidebarSessionHistory" class="sidebar-session-history"></div>
+
+        <label class="sidebar-search" id="sidebarSearchShell" hidden>
+          <span>Search chats</span>
+          <input id="sidebarSearchInput" class="input" type="search" placeholder="Search local chats..." />
+        </label>
+
+        <nav class="sidebar-page-links" aria-label="Main pages">
+          <button type="button" class="sidebar-page-link active" data-page-target="chat" data-icon="C"><span>Chat</span></button>
+          <button type="button" class="sidebar-page-link" data-page-target="sessions" data-icon="S"><span>Sessions</span></button>
+          <button type="button" class="sidebar-page-link" data-page-target="overview" data-icon="O"><span>Overview</span></button>
+          <button type="button" class="sidebar-page-link" data-page-target="help" data-icon="?"><span>Help</span></button>
+          <button type="button" class="sidebar-page-link dev-only" data-page-target="tools" data-icon="T"><span>Tools</span></button>
+          <button type="button" class="sidebar-page-link dev-only" data-page-target="journal" data-icon="J"><span>Journal</span></button>
+        </nav>
+
+        <section class="sidebar-chat-section" aria-label="Chats">
+          <div class="sidebar-section-title">
+            <span>Chats</span>
+            <small id="sidebarChatCount">0</small>
+          </div>
+          <div id="sidebarSessionHistory" class="sidebar-chat-list"></div>
         </section>
-        <div id="recentSessionsPullout" class="recent-sessions-pullout" hidden></div>
       </section>
 
-      <details class="nav-menu glass" id="navMenu">
-        <summary><span>Menu</span><small>pages</small></summary>
-        <nav class="page-nav" aria-label="Feature pages">
-          <div class="nav-group-label">Primary</div>
-          <button class="page-nav-button active" data-page-target="chat"><span>Chat</span><small>assistant thread</small></button>
-          <button class="page-nav-button" data-page-target="sessions"><span>Sessions</span><small>history and memories</small></button>
-          <div class="nav-group-label">Developer</div>
-          <button class="page-nav-button" data-page-target="tools"><span>Tools</span><small>manual runtime</small></button>
-          <button class="page-nav-button" data-page-target="adapters"><span>Adapters</span><small>workspace sources</small></button>
-          <button class="page-nav-button" data-page-target="journal"><span>Journal</span><small>events and traces</small></button>
-          <div class="nav-group-label">Runtime</div>
-          <button class="page-nav-button" data-page-target="overview"><span>Overview</span><small>full status</small></button>
-          <button class="page-nav-button" data-page-target="help"><span>Help</span><small>setup and issues</small></button>
-        </nav>
-      </details>
+      <div id="sidebarSessionMenu" class="sidebar-session-menu" hidden role="menu" aria-label="Chat options">
+        <button data-session-menu="pin">Pin</button>
+        <button data-session-menu="rename">Rename</button>
+        <button data-session-menu="share">Share</button>
+        <button data-session-menu="archive">Archive</button>
+        <button data-session-menu="delete" class="danger">Delete</button>
+      </div>
     </aside>
 
     <main class="chat-column page-shell" aria-label="Feature workspace">
@@ -66,8 +74,8 @@
               <p>Use natural language first. The model chooses tools when they improve correctness, while confirmations stay under your control.</p>
             </div>
             <div class="intro-actions">
-              <button class="chip-button" data-page-target="tools">Open tools</button>
-              <button class="chip-button" data-page-target="journal">View journal</button>
+              <button class="chip-button dev-only" data-page-target="tools">Open tools</button>
+              <button class="chip-button dev-only" data-page-target="journal">View journal</button>
             </div>
           </section>
 
@@ -78,13 +86,13 @@
                 <section id="runtimeStatusStrip" class="runtime-strip compact" aria-label="Runtime readiness"></section>
               </details>
               <div class="chat-title-copy">
-                <h2>Assistant thread</h2>
-                <p>Natural language first. Tools and routing stay available when needed.</p>
+                <p class="eyebrow" data-page-eyebrow>Chat</p>
+                <h2 data-page-title>Assistant thread</h2>
+                <p id="modelMetaText">Natural language first.</p>
               </div>
               <section class="compact-model-panel" id="modelPanel" tabindex="0" aria-label="Model selector">
                 <span id="modelStatus" class="status-pill muted">loading</span>
                 <select id="modelSelect" class="input compact-model-select"></select>
-                <div id="modelMeta" class="model-meta compact-model-meta"></div>
               </section>
             </div>
             <div class="hidden-runtime-controls" hidden>
@@ -133,6 +141,11 @@
               </div>
               <div id="sessionInfoGrid" class="sidebar-overview-grid session-info-grid"></div>
               <div id="sessionList" class="session-list"></div>
+              <details class="archive-drawer">
+                <summary>Archive <span id="archiveCount">0</span></summary>
+                <p class="field-help">Archived chats are hidden from history and require extra confirmation before deletion.</p>
+                <div id="archiveList" class="session-list archive-list"></div>
+              </details>
             </section>
 
             <section class="panel glass memories-panel clickable-panel" id="memoriesPanel" tabindex="0">
@@ -162,7 +175,7 @@
           </section>
         </section>
 
-        <section class="feature-page tools-page" data-page="tools" aria-label="Tools page">
+        <section class="feature-page tools-page dev-only" data-page="tools" aria-label="Tools page">
           <section class="page-intro glass">
             <div>
               <p class="eyebrow">Runtime</p>
@@ -198,27 +211,7 @@
           </section>
         </section>
 
-        <section class="feature-page adapters-page" data-page="adapters" aria-label="Adapters page">
-          <section class="page-intro glass">
-            <div>
-              <p class="eyebrow">Workspace</p>
-              <h3>Adapters</h3>
-              <p>See the source projects and reference surfaces the showcase can inspect.</p>
-            </div>
-            <div class="intro-actions">
-              <button id="refreshAdaptersBtn" class="secondary-button">Refresh adapters</button>
-            </div>
-          </section>
-          <section class="panel glass adapters-panel clickable-panel" id="adaptersPanel" tabindex="0">
-            <div class="panel-heading compact-heading">
-              <h2>Adapters</h2>
-              <span class="status-pill muted">workspace</span>
-            </div>
-            <div id="adapterList" class="adapter-list"></div>
-          </section>
-        </section>
-
-        <section class="feature-page journal-page" data-page="journal" aria-label="Journal page">
+        <section class="feature-page journal-page dev-only" data-page="journal" aria-label="Journal page">
           <section class="page-intro glass">
             <div>
               <p class="eyebrow">Observability</p>
@@ -244,55 +237,13 @@
             <div>
               <p class="eyebrow">Help</p>
               <h3>Setup, troubleshooting, and page guide</h3>
-              <p>Use this when Ollama, the interface, tools, model routing, sessions, or local state behave unexpectedly.</p>
+              <p>Use this when Ollama and models, the interface, tools, model routing, sessions, or local state behave unexpectedly.</p>
             </div>
           </section>
           <section class="panel glass help-panel clickable-panel" id="helpPanel" tabindex="0">
-            <div class="help-grid">
-              <details class="help-card" open>
-                <summary>Ollama and models</summary>
-                <p>Use `ollama list` to confirm models are installed and `ollama serve` or your system service to expose `127.0.0.1:11434`.</p>
-                <p>If the model picker is empty, verify `/api/tags` is reachable and check the runtime strip. Benchmarked profile suggestions appear only after `tooling-showcase benchmark` has produced local results.</p>
-                <p>If responses are slow, benchmark models, lower context tokens in Settings, or select a smaller installed model.</p>
-              </details>
-              <details class="help-card">
-                <summary>Chat page</summary>
-                <p>Use natural language first. The planner can call safe tools when a request needs files, search, retrieval, memories, or current information.</p>
-                <p>Use retry variants when an answer needs more detail, a shorter version, debugging, or a different model.</p>
-                <p>On mobile, open the sidebar with the floating menu button and keep long code blocks horizontally scrollable.</p>
-              </details>
-              <details class="help-card">
-                <summary>Sessions and memories</summary>
-                <p>Sessions and UI memories live in browser storage. Backend memories created by model tools live under the local `state/` directory.</p>
-                <p>Use memories only for stable preferences and facts. Do not store secrets, credentials, or one-off prompt content.</p>
-                <p>If history looks wrong, use the Sessions page search, export all sessions, or clear browser UI state from Settings.</p>
-              </details>
-              <details class="help-card">
-                <summary>Tools and confirmations</summary>
-                <p>Read/search/index tools are safe for automatic planner use. Shell execution stays confirmation-gated and destructive patterns are blocked.</p>
-                <p>If a tool is rejected, it is either hidden from the planner, unavailable in the runtime, or requires confirmation.</p>
-                <p>Use the Manual Tool Console to test exact tool arguments before expecting the model planner to call them.</p>
-              </details>
-              <details class="help-card">
-                <summary>Adapters and workspace</summary>
-                <p>Adapters inspect nearby projects configured by `TOOLING_SHOWCASE_PORTFOLIO`. If none appear, check the environment variable and project locations.</p>
-                <p>Use tree view and file search before reading files when paths are uncertain.</p>
-              </details>
-              <details class="help-card">
-                <summary>Journal and debugging</summary>
-                <p>The journal records routes, tool calls, model fallback behavior, and failures. Use it to verify whether a tool actually ran.</p>
-                <p>If UI state and backend state disagree, refresh runtime data, reload the page, and inspect `state/events.jsonl`.</p>
-              </details>
-              <details class="help-card">
-                <summary>Settings and profiles</summary>
-                <p>System prompts, profile fields, theme settings, and model options are browser-local. Export important sessions before clearing browser data.</p>
-                <p>Model options are sent to Ollama per request. Unsupported options may be ignored by a model or endpoint.</p>
-              </details>
-              <details class="help-card">
-                <summary>Install and benchmark flow</summary>
-                <p>Run `./install.sh` for guided setup. It can create a virtualenv, install the package, run tests, and offer benchmarking when several local models exist.</p>
-                <p>After installing new Ollama models, run `./install.sh` again or `tooling-showcase benchmark`; only unbenchmarked models are tested unless `--all` is used.</p>
-              </details>
+            <div class="help-layout">
+              <nav id="helpTopicNav" class="help-topic-nav" aria-label="Help topics"></nav>
+              <article id="helpTopicBody" class="help-topic-body"></article>
             </div>
           </section>
         </section>
@@ -347,6 +298,11 @@
             <h3>Runtime</h3>
             <label class="field-label" for="settingsModelSelect">Model</label>
             <select id="settingsModelSelect" class="input"></select>
+            <label class="field-label" for="settingsModeSelect">Mode</label>
+            <select id="settingsModeSelect" class="input">
+              <option value="user">User: clean chat only</option>
+              <option value="dev">Developer: tools, journal, raw details</option>
+            </select>
             <label class="field-label" for="settingsDensitySelect">Density</label>
             <select id="settingsDensitySelect" class="input">
               <option value="comfortable">Comfortable</option>
@@ -363,29 +319,24 @@
       </div>
 
       <div class="settings-tab-panel" data-settings-panel="model">
-        <details class="settings-section wide advanced-settings">
-          <summary>Advanced Ollama options</summary>
-          <div class="model-settings-grid">
-            <label class="number-field"><span>Temperature</span><input id="settingsTemperature" type="number" min="0" max="2" step="0.05" /></label>
-            <label class="number-field"><span>Context tokens</span><input id="settingsNumCtx" type="number" min="512" step="512" /></label>
-            <label class="number-field"><span>Top P</span><input id="settingsTopP" type="number" min="0" max="1" step="0.01" /></label>
-            <label class="number-field"><span>Top K</span><input id="settingsTopK" type="number" min="0" step="1" /></label>
-            <label class="number-field"><span>Repeat penalty</span><input id="settingsRepeatPenalty" type="number" min="0" step="0.01" /></label>
-            <label class="number-field"><span>Seed</span><input id="settingsSeed" type="number" step="1" /></label>
-            <label class="number-field"><span>Max prediction</span><input id="settingsNumPredict" type="number" step="1" /></label>
-            <label class="number-field"><span>Keep alive</span><input id="settingsKeepAlive" type="text" placeholder="5m" /></label>
-            <label class="number-field"><span>Ollama timeout sec</span><input id="settingsOllamaTimeout" type="number" min="1" max="3600" step="1" /></label>
-            <label class="number-field"><span>Tool timeout sec</span><input id="settingsToolTimeout" type="number" min="1" max="3600" step="1" /></label>
-          </div>
-          <p class="field-help">Model options are sent to Ollama. Timeout values control each UI chat request, manual tool call, and planner-run tool call.</p>
-          <label class="field-label" for="settingsStopSequences">Stop sequences, one per line</label>
-          <textarea id="settingsStopSequences" class="code-input" rows="3" spellcheck="false"></textarea>
-          <label class="field-label" for="settingsResponseFormat">Response format</label>
-          <select id="settingsResponseFormat" class="input">
-            <option value="">Default text</option>
-            <option value="json">JSON mode</option>
-          </select>
-        </details>
+        <section class="settings-section wide advanced-settings">
+          <h3>Ollama Options</h3>
+          <p class="field-help">These map to Ollama request options. Leave unsupported values at defaults if your local endpoint ignores them.</p>
+          <details open><summary>Generation</summary><div class="model-settings-grid" id="modelGenerationGrid"></div></details>
+          <details><summary>Sampling and penalties</summary><div class="model-settings-grid" id="modelSamplingGrid"></div></details>
+          <details><summary>Context and hardware</summary><div class="model-settings-grid" id="modelRuntimeGrid"></div></details>
+          <details><summary>Boolean runtime flags</summary><div class="model-settings-grid" id="modelBooleanGrid"></div></details>
+          <details><summary>Stop, format, and timeouts</summary>
+            <div class="model-settings-grid">
+              <label class="number-field"><span>Keep alive</span><input id="settingsKeepAlive" type="text" placeholder="5m" /></label>
+              <label class="number-field"><span>Ollama timeout sec</span><input id="settingsOllamaTimeout" type="number" min="1" max="3600" step="1" /></label>
+              <label class="number-field"><span>Tool timeout sec</span><input id="settingsToolTimeout" type="number" min="1" max="3600" step="1" /></label>
+              <label class="number-field"><span>Response format</span><select id="settingsResponseFormat" class="input"><option value="">Default text</option><option value="json">JSON mode</option></select></label>
+            </div>
+            <label class="field-label" for="settingsStopSequences">Stop sequences, one per line</label>
+            <textarea id="settingsStopSequences" class="code-input" rows="3" spellcheck="false"></textarea>
+          </details>
+        </section>
       </div>
 
       <div class="settings-tab-panel" data-settings-panel="prompts">
@@ -396,9 +347,13 @@
             <select id="settingsPromptSelect" class="input"></select>
             <div id="systemPromptList" class="prompt-list"></div>
             <div class="prompt-actions">
+              <button id="presetSystemPromptBtn" class="ghost-button">Load preset</button>
+              <button id="importSystemPromptBtn" class="ghost-button">Import</button>
+              <button id="exportSystemPromptBtn" class="ghost-button">Export</button>
               <button id="newSystemPromptBtn" class="ghost-button">New prompt</button>
               <button id="deleteSystemPromptBtn" class="danger-button">Delete prompt</button>
             </div>
+            <input id="systemPromptImportInput" type="file" accept=".txt,.md,.json,.prompt,.yaml,.yml,text/*,application/json" hidden />
           </section>
           <section class="settings-section">
             <h3>Prompt Editor</h3>
@@ -423,6 +378,8 @@
         <div class="settings-grid">
           <section class="settings-section">
             <h3>Profile</h3>
+            <div class="prompt-actions import-actions"><button id="importProfileBtn" class="ghost-button">Import profile</button><button id="exportProfileBtn" class="ghost-button">Export profile</button></div>
+            <input id="profileImportInput" type="file" accept=".txt,.md,.json,.yaml,.yml,text/*,application/json" hidden />
             <div class="avatar-upload-grid">
               <label class="avatar-upload"><span>User icon</span><img id="profileUserAvatarPreview" alt="User icon preview" /><input id="profileUserAvatarInput" type="file" accept="image/png,image/jpeg,image/webp" /></label>
               <label class="avatar-upload"><span>AI icon</span><img id="profileAssistantAvatarPreview" alt="AI icon preview" /><input id="profileAssistantAvatarInput" type="file" accept="image/png,image/jpeg,image/webp" /></label>
@@ -453,6 +410,8 @@
         <div class="settings-grid">
           <section class="settings-section">
             <h3>Memory behavior</h3>
+            <div class="prompt-actions import-actions"><button id="importMemoriesBtn" class="ghost-button">Import memories</button><button id="exportMemoriesBtn" class="ghost-button">Export memories</button></div>
+            <input id="memoriesImportInput" type="file" accept=".txt,.md,.json,.yaml,.yml,text/*,application/json" hidden />
             <label class="setting-line"><span>Attach local UI memories</span><input id="settingsMemoryToggle" type="checkbox" /></label>
             <label class="field-label" for="settingsMemoryPrefix">Injected memory heading</label>
             <input id="settingsMemoryPrefix" class="input" placeholder="Relevant local UI memories" />
@@ -480,6 +439,8 @@
         </div>
         <section class="settings-section wide">
           <h3>Theme</h3>
+          <label class="field-label" for="themePresetSelect">Theme preset</label>
+          <select id="themePresetSelect" class="input"></select>
           <div class="theme-settings-grid">
             <label class="color-field"><span>Primary</span><input id="themePrimaryColor" type="color" /></label>
             <label class="color-field"><span>Accent</span><input id="themeAccentColor" type="color" /></label>
