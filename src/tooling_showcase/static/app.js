@@ -3229,6 +3229,7 @@ function readBehaviorSettingsFromModal() {
 
   state.settings.stream = $("settingsStreamToggle")?.checked ?? state.settings.stream;
   state.settings.confirm = $("settingsConfirmToggle")?.checked ?? state.settings.confirm;
+  state.settings.attachMemories = $("settingsMemoryToggle")?.checked ?? state.settings.attachMemories;
   state.settings.autoScroll = $("settingsAutoScrollToggle")?.checked ?? state.settings.autoScroll;
 
   state.settings.openThinking = $("settingsOpenThinkingToggle")?.checked ?? state.settings.openThinking;
@@ -3240,6 +3241,11 @@ function readBehaviorSettingsFromModal() {
     52,
     Math.min(120, Number($("settingsMessageWidth")?.value) || state.settings.messageWidth || 78)
   );
+
+  state.settings.runtimeTimeouts = {
+    ollama: settingNumber("settingsOllamaTimeout", state.settings.runtimeTimeouts?.ollama || DEFAULT_SETTINGS.runtimeTimeouts.ollama, 1, 3600),
+    tools: settingNumber("settingsToolTimeout", state.settings.runtimeTimeouts?.tools || DEFAULT_SETTINGS.runtimeTimeouts.tools, 1, 3600)
+  };
 }
 
 function commitBehaviorSettingsFromModal() {
@@ -3259,9 +3265,6 @@ function saveSettings() {
   }
 
   readBehaviorSettingsFromModal();
-
-  state.settings.attachMemories =
-    $("settingsMemoryToggle")?.checked ?? state.settings.attachMemories;
 
   state.settings.theme = {
     primary: settingValue("themePrimaryColor", state.settings.theme?.primary || DEFAULT_SETTINGS.theme.primary),
@@ -3561,38 +3564,10 @@ function bindModalChrome() {
   $("cancelSettingsBtn").addEventListener("click", closeSettings);
   $("saveSettingsBtn")?.addEventListener("click", (event) => {
     event.preventDefault();
+    event.stopPropagation();
     saveSettings();
   });
   document.querySelectorAll(".settings-tab").forEach((button) => button.addEventListener("click", () => switchSettingsTab(button.dataset.settingsTab)));
-
-  [
-    "settingsModeSelect",
-    "settingsDensitySelect",
-    "settingsStreamToggle",
-    "settingsConfirmToggle",
-    "settingsAutoScrollToggle",
-    "settingsOpenThinkingToggle",
-    "settingsDetailsToggle",
-    "settingsCompactToolsToggle",
-    "settingsJournalLimit",
-    "settingsMessageWidth"
-  ].forEach((id) => {
-    const control = $(id);
-    if (!control) return;
-
-    control.addEventListener("change", () => {
-      readBehaviorSettingsFromModal();
-      applySettingsToMainControls();
-      updatePageChrome();
-      persist({ syncControls: false });
-    });
-
-    control.addEventListener("input", () => {
-      readBehaviorSettingsFromModal();
-      applySettingsToMainControls();
-      persist({ syncControls: false });
-    });
-  });
 
   $("settingsClearJournalBtn").addEventListener("click", () => { closeSettings(); requestClearJournal(); });
   $("settingsDeleteAllSessionsBtn")?.addEventListener("click", () => { closeSettings(); requestDeleteAllSessions(); });
@@ -3678,12 +3653,15 @@ function bindBehaviorSettingsAutosave() {
     "settingsDensitySelect",
     "settingsStreamToggle",
     "settingsConfirmToggle",
+    "settingsMemoryToggle",
     "settingsAutoScrollToggle",
     "settingsOpenThinkingToggle",
     "settingsDetailsToggle",
     "settingsCompactToolsToggle",
     "settingsJournalLimit",
-    "settingsMessageWidth"
+    "settingsMessageWidth",
+    "settingsOllamaTimeout",
+    "settingsToolTimeout"
   ]);
 
   document.addEventListener("change", (event) => {
@@ -3870,15 +3848,6 @@ function bindPageShell() {
     }
   });
 
-  document.addEventListener("click", (event) => {
-    const saveButton = event.target.closest("#saveSettingsBtn");
-    if (!saveButton) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    saveSettings();
-  });
 
   $("sidebarToggleBtn")?.addEventListener("click", () => setMobilePanel("left"));
 }
@@ -3927,8 +3896,10 @@ function bindEvents() {
     persist();
   });
   ["confirmToggle", "memoryToggle", "autoScrollToggle", "streamToggle", "systemPromptInput"].forEach((id) => {
-    $(id).addEventListener("change", persist);
-    $(id).addEventListener("input", persist);
+    const control = $(id);
+    if (!control) return;
+    control.addEventListener("change", persist);
+    control.addEventListener("input", persist);
   });
   bindModalChrome();
   bindBehaviorSettingsAutosave();
