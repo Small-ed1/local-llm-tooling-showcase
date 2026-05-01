@@ -143,6 +143,46 @@ def test_service_returns_model_answer_when_no_tool_is_needed(tmp_path: Path):
     assert result.tool_calls == []
 
 
+def test_service_streams_direct_model_deltas(tmp_path: Path):
+    config = make_config(tmp_path)
+    config.ollama.enabled = True
+    service = ShowcaseService(config)
+
+    def stream_events(*args, **kwargs):
+        yield {"type": "thinking_delta", "delta": "thinking"}
+        yield {"type": "content_delta", "delta": "Hello"}
+        yield {"type": "content_delta", "delta": " there"}
+        yield {"type": "ollama_done", "data": {}}
+
+    service.ollama.stream_events = stream_events
+    events = list(service.stream_handle("Say hello"))
+
+    assert [event["type"] for event in events] == ["thinking_delta", "content_delta", "content_delta", "final"]
+    assert events[-1]["message"] == "Hello there"
+    assert events[-1]["thinking"] == "thinking"
+
+
+def test_service_streams_tool_start_and_result(tmp_path: Path):
+    config = make_config(tmp_path)
+    config.ollama.enabled = True
+    service = ShowcaseService(config)
+    responses = iter(
+        [
+            ActionResult(True, '{"type":"tool_call","tool_name":"read_file","arguments":{"path":"README.md"}}'),
+            ActionResult(True, '{"type":"answer","message":"Read it. <END_OF_MESSAGE>"}'),
+        ]
+    )
+    service.ollama.ask = lambda *args, **kwargs: next(responses)
+
+    events = list(service.stream_handle("What does the README say?"))
+
+    assert [event["type"] for event in events if event["type"].startswith("tool_")] == ["tool_start", "tool_result"]
+    assert events[0]["tool_name"] == "read_file"
+    assert events[1]["tool_call"]["ok"] is True
+    assert events[-1]["type"] == "final"
+    assert events[-1]["tool_calls"][0]["tool_name"] == "read_file"
+
+
 def test_service_uses_benchmark_profile_for_auto_route(tmp_path: Path):
     config = make_config(tmp_path)
     config.ollama.enabled = True

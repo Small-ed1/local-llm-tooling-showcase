@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import json
+from typing import Iterator
 
 from tooling_showcase.config import OllamaConfig
 from tooling_showcase.models import ActionResult
@@ -86,6 +87,83 @@ class OllamaClient:
             return ActionResult(False, "Ollama returned an empty response.", data=raw)
         raw["thinking"] = thinking
         return ActionResult(True, content, data=raw)
+
+    def stream_events(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str | None = None,
+        response_format: str | dict | None = None,
+        model: str | None = None,
+        options: dict | None = None,
+        think: bool = False,
+        timeout_seconds: int | None = None,
+    ) -> Iterator[dict]:
+        if not self.config.enabled:
+            yield {"type": "error", "message": "Local Ollama fallback is disabled."}
+            return
+        selected_model = _normalize_model_choice(model) or self.config.model
+        payload = {
+            "model": selected_model,
+            "stream": True,
+            "think": think,
+            "messages": [
+                {"role": "system", "content": self._compose_system_prompt(system_prompt)},
+                {"role": "user", "content": prompt},
+            ],
+            "options": {"temperature": self.config.temperature},
+        }
+        if options:
+            payload["options"].update(options)
+        if response_format is not None:
+            payload["format"] = response_format
+        request = Request(
+            self.config.endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urlopen(request, timeout=timeout_seconds or self.config.timeout_seconds) as response:
+                for raw_line in response:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    message = data.get("message", {}) or {}
+                    content = str(message.get("content") or "")
+                    thinking = str(message.get("thinking") or "")
+                    if thinking:
+                        yield {"type": "thinking_delta", "delta": thinking}
+                    if content:
+                        yield {"type": "content_delta", "delta": content}
+                    if data.get("done"):
+                        yield {"type": "ollama_done", "data": data}
+                        return
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            if think and exc.code == 400 and "does not support thinking" in body.lower():
+                yield from self.stream_events(
+                    prompt,
+                    system_prompt=system_prompt,
+                    response_format=response_format,
+                    model=model,
+                    options=options,
+                    think=False,
+                    timeout_seconds=timeout_seconds,
+                )
+                return
+            yield {"type": "error", "message": f"Ollama HTTP {exc.code}: {body}"}
+        except URLError as exc:
+            yield {"type": "error", "message": f"Failed to reach Ollama: {exc}"}
+        except TimeoutError as exc:
+            yield {"type": "error", "message": f"Timed out waiting for Ollama: {exc}"}
+        except OSError as exc:
+            yield {"type": "error", "message": f"Ollama request failed: {exc}"}
 
     def _stream_request(self, request: Request, *, timeout_seconds: int | None = None) -> ActionResult:
         try:

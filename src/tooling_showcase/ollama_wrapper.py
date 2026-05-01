@@ -43,6 +43,11 @@ def run_ollama_wrapper(
             confirm = bool(payload.get("showcase_confirm", False))
             model = _optional_string(payload.get("model"))
             system_prompt = extract_system_prompt(payload)
+            if bool(payload.get("stream", False)):
+                self._send_ollama_stream_iter(
+                    stream_chat_events(payload, _stream_showcase_service(service, text, payload, confirm=confirm, model=model, system_prompt=system_prompt)),
+                )
+                return
             result = _call_showcase_service(
                 service,
                 text,
@@ -57,11 +62,6 @@ def run_ollama_wrapper(
                 ollama_timeout_seconds=_optional_timeout(payload.get("showcase_ollama_timeout_seconds"), _service_ollama_timeout(service)),
                 tool_timeout_seconds=_optional_timeout(payload.get("showcase_tool_timeout_seconds"), _service_tool_timeout(service)),
             )
-            if bool(payload.get("stream", False)):
-                self._send_ollama_stream(
-                    stream_chat_chunks(payload, result),
-                )
-                return
             response = build_ollama_chat_response(payload, result)
             self._send_ollama_response(response, stream=False)
 
@@ -71,6 +71,11 @@ def run_ollama_wrapper(
             confirm = bool(payload.get("showcase_confirm", False))
             model = _optional_string(payload.get("model"))
             system_prompt = extract_system_prompt(payload)
+            if bool(payload.get("stream", False)):
+                self._send_ollama_stream_iter(
+                    stream_generate_events(payload, _stream_showcase_service(service, text, payload, confirm=confirm, model=model, system_prompt=system_prompt)),
+                )
+                return
             result = _call_showcase_service(
                 service,
                 text,
@@ -85,11 +90,6 @@ def run_ollama_wrapper(
                 ollama_timeout_seconds=_optional_timeout(payload.get("showcase_ollama_timeout_seconds"), _service_ollama_timeout(service)),
                 tool_timeout_seconds=_optional_timeout(payload.get("showcase_tool_timeout_seconds"), _service_tool_timeout(service)),
             )
-            if bool(payload.get("stream", False)):
-                self._send_ollama_stream(
-                    stream_generate_chunks(payload, result),
-                )
-                return
             response = build_ollama_generate_response(payload, result)
             self._send_ollama_response(response, stream=False)
 
@@ -121,6 +121,14 @@ def run_ollama_wrapper(
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+
+        def _send_ollama_stream_iter(self, payloads) -> None:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.end_headers()
+            for payload in payloads:
+                self.wfile.write(json.dumps(payload).encode("utf-8") + b"\n")
+                self.wfile.flush()
 
         def _proxy_request(self) -> None:
             target = upstream_base + self.path
@@ -185,6 +193,45 @@ def _call_showcase_service(service, text: str, **kwargs):
             model=kwargs.get("model"),
             system_prompt=kwargs.get("system_prompt"),
         )
+
+
+def _stream_showcase_service(service, text: str, payload: dict, **kwargs):
+    if hasattr(service, "stream_handle"):
+        stream_handle = service.stream_handle
+        stream_kwargs = {
+            **kwargs,
+            "options": payload.get("options") if isinstance(payload.get("options"), dict) else None,
+            "response_format": _response_format(payload.get("format")),
+            "allow_tools": bool(payload.get("showcase_allow_tools", True)),
+            "max_tool_calls": int(payload.get("showcase_max_tool_calls", 4)),
+            "show_tool_traces": bool(payload.get("showcase_show_tool_traces", False)),
+            "ollama_timeout_seconds": _optional_timeout(payload.get("showcase_ollama_timeout_seconds"), _service_ollama_timeout(service)),
+            "tool_timeout_seconds": _optional_timeout(payload.get("showcase_tool_timeout_seconds"), _service_tool_timeout(service)),
+        }
+        try:
+            signature = inspect.signature(stream_handle)
+            params = signature.parameters
+            accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values())
+            accepted = {key: value for key, value in stream_kwargs.items() if value is not None and (accepts_kwargs or key in params)}
+            yield from stream_handle(text, **accepted)
+            return
+        except TypeError:
+            pass
+
+    result = _call_showcase_service(service, text, **kwargs)
+    for chunk in _chunk_text(result.message):
+        yield {"type": "content_delta", "delta": chunk}
+    yield {
+        "type": "final",
+        "ok": result.ok,
+        "message": result.message,
+        "tool_calls": [
+            {"tool_name": call.tool_name, "ok": call.ok, "summary": call.summary, "data": call.data}
+            for call in result.tool_calls
+        ],
+        "data": result.data or {},
+        "done": True,
+    }
 
 
 def _response_format(value):
@@ -379,6 +426,25 @@ def stream_chat_chunks(payload: dict, result) -> list[dict]:
     return chunks
 
 
+def stream_chat_events(payload: dict, events) -> list[dict]:
+    model = str(payload.get("model", "showcase-wrapper"))
+    created_at = datetime.now(timezone.utc).isoformat()
+    tool_calls = []
+    for event in events:
+        event_type = event.get("type")
+        if event_type == "content_delta":
+            yield {"model": model, "created_at": created_at, "message": {"role": "assistant", "content": str(event.get("delta") or "")}, "done": False}
+        elif event_type in {"tool_result", "tool_calls"}:
+            tool_calls = event.get("tool_calls") or ([event.get("tool_call")] if event.get("tool_call") else tool_calls)
+            yield {"model": model, "created_at": created_at, "message": {"role": "assistant", "content": ""}, "done": False, "showcase": {"event": event_type, "tool_calls": tool_calls}}
+        elif event_type == "tool_start":
+            yield {"model": model, "created_at": created_at, "message": {"role": "assistant", "content": ""}, "done": False, "showcase": {"event": "tool_start", "tool_name": event.get("tool_name"), "arguments": event.get("arguments") or {}}}
+        elif event_type == "final":
+            tool_calls = event.get("tool_calls") or tool_calls
+            yield {"model": model, "created_at": created_at, "message": {"role": "assistant", "content": ""}, "done": True, "done_reason": "stop", "showcase": {"ok": event.get("ok"), "tool_calls": tool_calls, "data": event.get("data") or {}}}
+            return
+
+
 def stream_generate_chunks(payload: dict, result) -> list[dict]:
     model = str(payload.get("model", "showcase-wrapper"))
     created_at = datetime.now(timezone.utc).isoformat()
@@ -414,6 +480,25 @@ def stream_generate_chunks(payload: dict, result) -> list[dict]:
         }
     )
     return chunks
+
+
+def stream_generate_events(payload: dict, events):
+    model = str(payload.get("model", "showcase-wrapper"))
+    created_at = datetime.now(timezone.utc).isoformat()
+    tool_calls = []
+    for event in events:
+        event_type = event.get("type")
+        if event_type == "content_delta":
+            yield {"model": model, "created_at": created_at, "response": str(event.get("delta") or ""), "done": False}
+        elif event_type in {"tool_result", "tool_calls"}:
+            tool_calls = event.get("tool_calls") or ([event.get("tool_call")] if event.get("tool_call") else tool_calls)
+            yield {"model": model, "created_at": created_at, "response": "", "done": False, "showcase": {"event": event_type, "tool_calls": tool_calls}}
+        elif event_type == "tool_start":
+            yield {"model": model, "created_at": created_at, "response": "", "done": False, "showcase": {"event": "tool_start", "tool_name": event.get("tool_name"), "arguments": event.get("arguments") or {}}}
+        elif event_type == "final":
+            tool_calls = event.get("tool_calls") or tool_calls
+            yield {"model": model, "created_at": created_at, "response": "", "done": True, "done_reason": "stop", "context": [], "showcase": {"ok": event.get("ok"), "tool_calls": tool_calls, "data": event.get("data") or {}}}
+            return
 
 
 def _chunk_text(text: str, *, max_chunk_size: int = 120) -> list[str]:

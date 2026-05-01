@@ -1094,10 +1094,10 @@ function renderToolPipeline(node, calls) {
   }
   root.hidden = !calls.length;
   root.innerHTML = calls.map((call, index) => `
-    <div class="tool-pipeline-step ${call.ok ? "ok" : "bad"}">
+    <div class="tool-pipeline-step ${call.ok === null ? "" : (call.ok ? "ok" : "bad")}">
       <span>${index + 1}</span>
       <strong>${escapeHtml(call.tool_name || call.name || "tool")}</strong>
-      <small>${call.ok ? "ok" : "failed"}</small>
+      <small>${call.ok === null ? "running" : (call.ok ? "ok" : "failed")}</small>
     </div>`).join("");
 }
 
@@ -1116,13 +1116,14 @@ function renderToolCalls(root, calls, { nested = false } = {}) {
   calls.forEach((call) => {
     const card = document.createElement(nested ? "details" : "section");
     card.className = `tool-call clickable-card${nested ? " nested-tool-call" : ""}`;
+    const pending = call.ok === null || call.data?.status === "running";
     const rawSummary = call.summary || JSON.stringify(call.data ?? call, null, 2);
     const summary = escapeHtml(String(rawSummary).length > 900 ? `${String(rawSummary).slice(0, 900)}\n... [open details for full output]` : rawSummary);
     const payload = escapeHtml(JSON.stringify(call, null, 2));
     card.innerHTML = `
       ${nested
-        ? `<summary><strong>${escapeHtml(call.tool_name || call.name || "tool")}</strong><span class="${call.ok ? "ok-text" : "bad-text"}">${call.ok ? "ok" : "failed"}</span></summary>`
-        : `<header><strong>${escapeHtml(call.tool_name || call.name || "tool")}</strong><span class="${call.ok ? "ok-text" : "bad-text"}">${call.ok ? "ok" : "failed"}</span></header>`}
+        ? `<summary><strong>${escapeHtml(call.tool_name || call.name || "tool")}</strong><span class="${pending ? "" : (call.ok ? "ok-text" : "bad-text")}">${pending ? "running" : (call.ok ? "ok" : "failed")}</span></summary>`
+        : `<header><strong>${escapeHtml(call.tool_name || call.name || "tool")}</strong><span class="${pending ? "" : (call.ok ? "ok-text" : "bad-text")}">${pending ? "running" : (call.ok ? "ok" : "failed")}</span></header>`}
       <pre>${summary}</pre>
       <details class="tool-json-box"><summary>JSON</summary><pre>${payload}</pre></details>`;
     card.addEventListener("click", (event) => {
@@ -1695,9 +1696,23 @@ async function requestAssistantResponse({ userText, requestText, assistantMessag
           patchActiveMessageVariant(assistantMessage, { toolCalls: chunk.tool_calls || [] });
           renderActivityBox(assistantNode, assistantMessage);
           renderMessageActions(assistantNode, assistantMessage);
+        } else if (chunk.type === "tool_start") {
+          patchActiveMessageVariant(assistantMessage, { toolCalls: upsertStreamingToolCall(assistantMessage.toolCalls || [], {
+            tool_name: chunk.tool_name || "tool",
+            ok: null,
+            summary: "Running...",
+            data: { arguments: chunk.arguments || {}, status: "running" }
+          }) });
+          renderActivityBox(assistantNode, assistantMessage);
+          renderMessageActions(assistantNode, assistantMessage);
+        } else if (chunk.type === "tool_result") {
+          const nextCalls = chunk.tool_calls || upsertStreamingToolCall(assistantMessage.toolCalls || [], chunk.tool_call || {});
+          patchActiveMessageVariant(assistantMessage, { toolCalls: nextCalls });
+          renderActivityBox(assistantNode, assistantMessage);
+          renderMessageActions(assistantNode, assistantMessage);
         } else if (chunk.type === "final") {
-          const content = assistantMessage.content.trim() ? assistantMessage.content : stripThinkTags(chunk.message || "");
-          const thinking = assistantMessage.thinking.trim() ? assistantMessage.thinking : (chunk.thinking || extractThinkText(chunk.message || ""));
+          const content = stripThinkTags(chunk.message || assistantMessage.content || "");
+          const thinking = chunk.thinking || extractThinkText(chunk.message || "") || assistantMessage.thinking || "";
           patchActiveMessageVariant(assistantMessage, {
             ok: Boolean(chunk.ok),
             content,
@@ -1747,6 +1762,19 @@ async function requestAssistantResponse({ userText, requestText, assistantMessag
     await loadJournal();
     scrollChat();
   }
+}
+
+function upsertStreamingToolCall(calls, nextCall) {
+  const next = { ...(nextCall || {}) };
+  const name = next.tool_name || next.name || "tool";
+  const args = JSON.stringify(next.data?.arguments || next.arguments || {});
+  const index = calls.findIndex((call) => {
+    const callName = call.tool_name || call.name || "tool";
+    const callArgs = JSON.stringify(call.data?.arguments || call.arguments || {});
+    return callName === name && (call.ok === null || call.data?.status === "running") && callArgs === args;
+  });
+  if (index === -1) return [...calls, next];
+  return calls.map((call, callIndex) => callIndex === index ? { ...call, ...next } : call);
 }
 
 function startUserMessageEdit(messageId) {

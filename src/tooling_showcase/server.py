@@ -233,6 +233,25 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 ollama_timeout_seconds = _optional_timeout(payload.get("ollama_timeout_seconds"), service.config.ollama.timeout_seconds)
                 tool_timeout_seconds = _optional_timeout(payload.get("tool_timeout_seconds"), service.config.shell_policy.timeout_seconds)
 
+                if stream:
+                    self._send_stream_iter(
+                        _call_service_stream(
+                            service,
+                            text,
+                            confirm=confirm,
+                            model=model,
+                            system_prompt=system_prompt,
+                            options=options,
+                            response_format=response_format,
+                            allow_tools=bool(payload.get("allow_tools", True)),
+                            max_tool_calls=_safe_int(payload.get("max_tool_calls"), 4, minimum=0, maximum=12),
+                            show_tool_traces=bool(payload.get("show_tool_traces", False)),
+                            ollama_timeout_seconds=ollama_timeout_seconds,
+                            tool_timeout_seconds=tool_timeout_seconds,
+                        )
+                    )
+                    return
+
                 try:
                     result = _call_service_handle(
                         service,
@@ -251,18 +270,6 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                     )
                 except Exception as exc:
                     result = ActionResult(False, f"Request failed before completion: {exc}")
-
-                if stream:
-                    self._send_stream(
-                        _stream_server_chunks(
-                            result.ok,
-                            result.message,
-                            result.tool_calls,
-                            data=result.data or {},
-                            api_thinking=_result_thinking(result),
-                        )
-                    )
-                    return
 
                 thinking, clean_msg = _split_thinking(result.message)
                 api_thinking = ""
@@ -453,6 +460,18 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
             except (BrokenPipeError, ConnectionResetError):
                 return
 
+        def _send_stream_iter(self, payloads) -> None:
+            try:
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                for payload in payloads:
+                    self.wfile.write(json.dumps(payload).encode("utf-8") + b"\n")
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                return
+
     server = ThreadingHTTPServer((host, port), Handler)
     print(f"Showcase UI available at http://{host}:{port}")
 
@@ -513,6 +532,28 @@ def _call_service_handle(
             return service.handle(text, confirm=confirm, model=model, system_prompt=system_prompt, stream=stream)
         except TypeError:
             return service.handle(text, confirm=confirm)
+
+
+def _call_service_stream(service: ShowcaseService, text: str, **kwargs):
+    try:
+        stream_handle = getattr(service, "stream_handle")
+    except AttributeError:
+        result = _call_service_handle(service, text, stream=True, **kwargs)
+        yield from _stream_server_chunks(result.ok, result.message, result.tool_calls, data=result.data or {}, api_thinking=_result_thinking(result))
+        return
+
+    try:
+        signature = inspect.signature(stream_handle)
+        params = signature.parameters
+        accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values())
+        accepted = {
+            key: value
+            for key, value in kwargs.items()
+            if value is not None and (accepts_kwargs or key in params)
+        }
+        yield from stream_handle(text, **accepted)
+    except Exception as exc:
+        yield {"type": "final", "ok": False, "message": f"Request failed before completion: {exc}", "thinking": "", "tool_calls": [], "data": {}, "done": True}
 
 
 def _load_ollama_models(service: ShowcaseService) -> dict:
