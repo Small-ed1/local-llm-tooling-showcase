@@ -111,37 +111,36 @@
             </div>
             <div class="composer-input-shell">
               <textarea id="promptInput" class="prompt-input" rows="3" placeholder="Ask the local runtime something... Shift+Enter for newline, Enter to send."></textarea>
-              <div class="composer-inline-actions" aria-label="Composer actions">
-                <button id="composerFileBtn" class="circle-button file-button" title="Insert file text" aria-label="Insert file text">+</button>
+              <div class="composer-left-actions" aria-label="Composer utilities">
                 <button id="composerMoreBtn" class="circle-button more-button" title="More options" aria-label="More options">...</button>
-                <button id="deepResearchBtn" class="circle-button deep-research-button" title="Deep research" aria-label="Deep research">D</button>
-                <button id="runAutonomousBtn" class="circle-button plan-button" title="Run task" aria-label="Run task">P</button>
+              </div>
+              <div class="composer-inline-actions" aria-label="Composer actions">
                 <button id="sendBtn" class="circle-button send-button" title="Send" aria-label="Send">&gt;</button>
               </div>
             </div>
             <input id="composerFileInput" type="file" accept=".txt,.md,.json,.yaml,.yml,.py,.js,.ts,.tsx,.html,.css,.sh,text/*,application/json" multiple hidden />
             <div id="composerMoreMenu" class="composer-more-menu" hidden>
+              <button id="composerFileBtn" class="ghost-button">Add file text</button>
+              <details class="composer-research-box">
+                <summary>Research Lab</summary>
+                <label class="field-label" for="composerResearchDepthSelect">Research type
+                  <select id="composerResearchDepthSelect" class="input">
+                    <option value="1">Light Research</option>
+                    <option value="3" selected>Deep Research</option>
+                  </select>
+                </label>
+                <label class="field-label" for="composerResearchModeSelect">Source mode
+                  <select id="composerResearchModeSelect" class="input">
+                    <option value="local">Local Only</option>
+                    <option value="hybrid">Hybrid</option>
+                  </select>
+                </label>
+                <button id="composerResearchBtn" class="primary-button" type="button">Run research report</button>
+              </details>
+              <button id="composerRunTaskBtn" class="ghost-button">Run task</button>
               <button id="composerSystemPromptBtn" class="ghost-button">System prompt</button>
               <button id="composerClearBtn" class="ghost-button">Clear chat</button>
               <button id="composerSettingsBtn" class="ghost-button">Settings</button>
-            </div>
-            <div id="deepResearchPanel" class="deep-research-panel" hidden>
-              <strong>Deep research</strong>
-              <label class="field-label" for="composerResearchDepthSelect">Depth
-                <select id="composerResearchDepthSelect" class="input">
-                  <option value="1">1 - light</option>
-                  <option value="2">2 - standard</option>
-                  <option value="3">3 - deep</option>
-                  <option value="4">4 - exhaustive</option>
-                </select>
-              </label>
-              <label class="field-label" for="composerResearchModeSelect">Mode
-                <select id="composerResearchModeSelect" class="input">
-                  <option value="local">Local only</option>
-                  <option value="hybrid">Hybrid</option>
-                </select>
-              </label>
-              <span>Send will create a local research report in this chat.</span>
             </div>
             <div class="composer-meta-row"><span id="requestStats" class="request-stats">idle</span></div>
             <textarea id="systemPromptInput" class="system-prompt" rows="4" placeholder="Optional system prompt override..." hidden></textarea>
@@ -341,18 +340,6 @@
             <label class="setting-line"><span>Stream responses</span><input id="settingsStreamToggle" type="checkbox" /></label>
             <label class="setting-line"><span>Confirm risky tool actions</span><input id="settingsConfirmToggle" type="checkbox" /></label>
             <label class="setting-line"><span>Auto-scroll chat</span><input id="settingsAutoScrollToggle" type="checkbox" /></label>
-            <label class="field-label" for="settingsResearchDepthSelect">Default deep research depth</label>
-            <select id="settingsResearchDepthSelect" class="input">
-              <option value="1">1 - light</option>
-              <option value="2">2 - standard</option>
-              <option value="3">3 - deep</option>
-              <option value="4">4 - exhaustive</option>
-            </select>
-            <label class="field-label" for="settingsResearchModeSelect">Default deep research mode</label>
-            <select id="settingsResearchModeSelect" class="input">
-              <option value="local">Local only</option>
-              <option value="hybrid">Hybrid</option>
-            </select>
           </section>
         </div>
       </div>

@@ -678,10 +678,6 @@ const DEFAULT_SETTINGS = {
   profilePrefix: "Relevant profile information",
   responseFormat: "",
   sessionSearchQuery: "",
-  deepResearch: {
-    mode: "local",
-    depth: 2
-  },
   runtimeTimeouts: {
     ollama: 120,
     tools: 30
@@ -815,7 +811,6 @@ const state = {
   lastController: null,
   pendingConfirm: null,
   detailPayload: null,
-  composerDeepResearch: false,
   retryMessageId: null,
   editingMessageId: null,
   sessionSearchQuery: "",
@@ -1175,10 +1170,6 @@ function sanitizeSettings(rawSettings = {}) {
     profilePrefix: boundedString(merged.profilePrefix, DEFAULT_SETTINGS.profilePrefix, MAX_PREFIX_CHARS).trim() || DEFAULT_SETTINGS.profilePrefix,
     responseFormat: boundedString(merged.responseFormat, DEFAULT_SETTINGS.responseFormat, MAX_SETTINGS_TEXT_CHARS),
     sessionSearchQuery: boundedString(merged.sessionSearchQuery, "", 1000),
-    deepResearch: {
-      mode: ["local", "hybrid"].includes(merged.deepResearch?.mode) ? merged.deepResearch.mode : DEFAULT_SETTINGS.deepResearch.mode,
-      depth: boundedNumber(merged.deepResearch?.depth, DEFAULT_SETTINGS.deepResearch.depth, 1, 4)
-    },
     runtimeTimeouts: {
       ollama: boundedNumber(merged.runtimeTimeouts?.ollama, DEFAULT_SETTINGS.runtimeTimeouts.ollama, 1, 3600),
       tools: boundedNumber(merged.runtimeTimeouts?.tools, DEFAULT_SETTINGS.runtimeTimeouts.tools, 1, 3600)
@@ -2694,13 +2685,6 @@ function buildRuntimeTimeouts() {
   };
 }
 
-function selectedDeepResearchOptions() {
-  return {
-    mode: ["local", "hybrid"].includes($("composerResearchModeSelect")?.value) ? $("composerResearchModeSelect").value : state.settings.deepResearch.mode,
-    depth: Math.max(1, Math.min(4, Number($("composerResearchDepthSelect")?.value || state.settings.deepResearch.depth || 2)))
-  };
-}
-
 function chatContextRole(role) {
   if (role === "user") return "user";
   if (role === "assistant") return "assistant";
@@ -2777,71 +2761,7 @@ async function sendMessage() {
   const assistantMessage = addSessionMessage("assistant", "", { thinking: "", toolCalls: [], model: $("modelSelect").value || "auto", options: modelOptions, requestText: text, parentUserMessageId: userMessage.id });
   const assistantNode = renderMessage(assistantMessage);
   scrollChat();
-  if (state.composerDeepResearch) {
-    await requestDeepResearchResponse({ userText: text, assistantMessage, assistantNode });
-    return;
-  }
   await requestAssistantResponse({ userText: text, requestText: text, assistantMessage, assistantNode });
-}
-
-async function requestDeepResearchResponse({ userText, assistantMessage, assistantNode }) {
-  if (state.busy) return;
-  state.busy = true;
-  const started = performance.now();
-  const contentNode = assistantNode?.querySelector(".message-content");
-  const options = selectedDeepResearchOptions();
-  patchActiveMessageVariant(assistantMessage, {
-    content: "Starting local deep research...",
-    thinking: `Mode: ${options.mode}\nDepth: ${options.depth}`,
-    toolCalls: [],
-    ok: true,
-    model: "local research",
-    requestText: userText
-  });
-  renderMessageContent(contentNode, assistantMessage);
-  renderActivityBox(assistantNode, assistantMessage);
-  setRequestStats(`deep research · depth ${options.depth}`);
-  $("sendBtn").textContent = "X";
-  $("sendBtn").title = "Deep research running";
-  try {
-    const start = await researchApi("/api/research/start", { goal: userText, mode: options.mode, depth: options.depth });
-    patchActiveMessageVariant(assistantMessage, {
-      content: "Research plan created. Gathering local sources...",
-      toolCalls: [{ tool_name: "research.start", ok: true, summary: `${start.session?.plan?.length || 0} plan steps`, data: start.session || {} }]
-    });
-    renderMessageContent(contentNode, assistantMessage);
-    renderActivityBox(assistantNode, assistantMessage);
-    const run = await researchApi("/api/research/run", { id: start.session.id });
-    const session = run.session || {};
-    patchActiveMessageVariant(assistantMessage, {
-      content: session.report || "Deep research completed without a report.",
-      thinking: (session.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
-      toolCalls: [
-        { tool_name: "research.start", ok: true, summary: `${start.session?.plan?.length || 0} plan steps`, data: start.session || {} },
-        { tool_name: "research.run", ok: true, summary: `${(session.sources || []).length} sources`, data: session }
-      ],
-      ok: true,
-      modelRoute: { category: "deep research", reason: "composer deep research" }
-    });
-    assistantNode.classList.toggle("failed", false);
-    renderMessageContent(contentNode, assistantMessage);
-    renderActivityBox(assistantNode, assistantMessage);
-    renderMessageActions(assistantNode, assistantMessage);
-  } catch (error) {
-    patchActiveMessageVariant(assistantMessage, { ok: false, content: `Deep research failed: ${error.message}` });
-    assistantNode.classList.toggle("failed", true);
-    renderMessageContent(contentNode, assistantMessage);
-    renderMessageActions(assistantNode, assistantMessage);
-  } finally {
-    patchActiveMessageVariant(assistantMessage, { latencyMs: Math.round(performance.now() - started) });
-    persist();
-    state.busy = false;
-    $("sendBtn").textContent = ">";
-    $("sendBtn").title = "Send";
-    setRequestStats(`${assistantMessage.latencyMs} ms · deep research`);
-    await loadJournal();
-    scrollChat();
-  }
 }
 
 async function requestAssistantResponse({ userText, requestText, assistantMessage, assistantNode = null, modelOverride = null, retryMeta = null }) {
@@ -3264,9 +3184,6 @@ function applySettingsToMainControls() {
   if ($("confirmToggle")) $("confirmToggle").checked = Boolean(state.settings.confirm);
   if ($("memoryToggle")) $("memoryToggle").checked = Boolean(state.settings.attachMemories);
   if ($("autoScrollToggle")) $("autoScrollToggle").checked = Boolean(state.settings.autoScroll);
-  if ($("composerResearchDepthSelect")) $("composerResearchDepthSelect").value = String(state.settings.deepResearch?.depth || DEFAULT_SETTINGS.deepResearch.depth);
-  if ($("composerResearchModeSelect")) $("composerResearchModeSelect").value = state.settings.deepResearch?.mode || DEFAULT_SETTINGS.deepResearch.mode;
-
   applySettingsVisuals();
 }
 
@@ -3565,8 +3482,6 @@ function syncSettingsModal() {
   $("settingsConfirmToggle").checked = Boolean(state.settings.confirm);
   $("settingsMemoryToggle").checked = Boolean(state.settings.attachMemories);
   $("settingsAutoScrollToggle").checked = Boolean(state.settings.autoScroll);
-  $("settingsResearchDepthSelect").value = String(state.settings.deepResearch?.depth || DEFAULT_SETTINGS.deepResearch.depth);
-  $("settingsResearchModeSelect").value = state.settings.deepResearch?.mode || DEFAULT_SETTINGS.deepResearch.mode;
   $("settingsOpenThinkingToggle").checked = Boolean(state.settings.openThinking);
   $("settingsDetailsToggle").checked = Boolean(state.settings.detailsEnabled);
   $("settingsCompactToolsToggle").checked = Boolean(state.settings.compactTools);
@@ -3824,11 +3739,6 @@ function readBehaviorSettingsFromModal() {
   state.settings.confirm = $("settingsConfirmToggle")?.checked ?? state.settings.confirm;
   state.settings.attachMemories = $("settingsMemoryToggle")?.checked ?? state.settings.attachMemories;
   state.settings.autoScroll = $("settingsAutoScrollToggle")?.checked ?? state.settings.autoScroll;
-  state.settings.deepResearch = {
-    mode: ["local", "hybrid"].includes($("settingsResearchModeSelect")?.value) ? $("settingsResearchModeSelect").value : DEFAULT_SETTINGS.deepResearch.mode,
-    depth: settingNumber("settingsResearchDepthSelect", DEFAULT_SETTINGS.deepResearch.depth, 1, 4)
-  };
-
   state.settings.openThinking = $("settingsOpenThinkingToggle")?.checked ?? state.settings.openThinking;
   state.settings.detailsEnabled = $("settingsDetailsToggle")?.checked ?? state.settings.detailsEnabled;
   state.settings.compactTools = $("settingsCompactToolsToggle")?.checked ?? state.settings.compactTools;
@@ -4458,18 +4368,15 @@ function bindEvents() {
   $("modelSelect").addEventListener("change", () => { updateModelMeta(); renderRuntimeStatus(); persist(); });
   $("toolSelect").addEventListener("change", updateToolExample);
   $("runToolBtn").addEventListener("click", runManualTool);
-  $("runAutonomousBtn").addEventListener("click", runAutonomous);
+  $("runAutonomousBtn")?.addEventListener("click", runAutonomous);
   $("composerFileBtn")?.addEventListener("click", () => $("composerFileInput")?.click());
   $("composerFileInput")?.addEventListener("change", insertComposerFiles);
   $("composerMoreBtn")?.addEventListener("click", toggleComposerMoreMenu);
-  $("deepResearchBtn")?.addEventListener("click", toggleComposerDeepResearch);
+  $("composerResearchBtn")?.addEventListener("click", openResearchFromComposer);
+  $("composerRunTaskBtn")?.addEventListener("click", () => { toggleComposerMoreMenu(false); runAutonomous(); });
   $("composerSystemPromptBtn")?.addEventListener("click", () => { toggleComposerMoreMenu(false); const box = $("systemPromptInput"); box.hidden = !box.hidden; if (!box.hidden) box.focus(); });
   $("composerClearBtn")?.addEventListener("click", () => { toggleComposerMoreMenu(false); clearActiveSession(); });
   $("composerSettingsBtn")?.addEventListener("click", () => { toggleComposerMoreMenu(false); openSettings(); });
-  ["composerResearchDepthSelect", "composerResearchModeSelect"].forEach((id) => $(id)?.addEventListener("change", () => {
-    const options = selectedDeepResearchOptions();
-    setRequestStats(`deep research ready · ${options.mode} · depth ${options.depth}`);
-  }));
   $("newSessionBtn").addEventListener("click", () => createSession(true));
   $("sidebarNewChatBtn")?.addEventListener("click", (event) => { event.stopPropagation(); createSession(true); });
   $("sidebarCollapseBtn")?.addEventListener("click", (event) => { event.stopPropagation(); toggleSidebarCollapsed(); });
@@ -4516,21 +4423,10 @@ function toggleComposerMoreMenu(force = null) {
   menu.hidden = force === null ? !menu.hidden : !force;
 }
 
-function toggleComposerDeepResearch() {
-  state.composerDeepResearch = !state.composerDeepResearch;
-  const panel = $("deepResearchPanel");
-  const button = $("deepResearchBtn");
-  if (panel) panel.hidden = !state.composerDeepResearch;
-  if (button) {
-    button.classList.toggle("active", state.composerDeepResearch);
-    button.setAttribute("aria-pressed", String(state.composerDeepResearch));
-  }
-  if (state.composerDeepResearch) {
-    const options = selectedDeepResearchOptions();
-    setRequestStats(`deep research ready · ${options.mode} · depth ${options.depth}`);
-  } else {
-    setRequestStats("idle");
-  }
+function openResearchFromComposer() {
+  const draft = $("promptInput")?.value.trim();
+  toggleComposerMoreMenu(false);
+  runComposerResearch(draft);
 }
 
 function insertComposerFiles(event) {
@@ -4543,6 +4439,76 @@ function insertComposerFiles(event) {
     });
   });
   event.target.value = "";
+}
+
+async function runComposerResearch(goalText = "") {
+  if (state.busy) return;
+  const input = $("promptInput");
+  const text = String(goalText || input?.value || "").trim();
+  if (!text) {
+    setRequestStats("research needs a prompt", { bad: true });
+    input?.focus();
+    return;
+  }
+
+  if (input) input.value = "";
+  const depth = Math.max(1, Math.min(4, Number($("composerResearchDepthSelect")?.value || 3)));
+  const mode = ["local", "hybrid"].includes($("composerResearchModeSelect")?.value) ? $("composerResearchModeSelect").value : "local";
+  const userMessage = addSessionMessage("user", text, { model: "research lab" });
+  chatLog.querySelector(".empty-state")?.remove();
+  renderMessage(userMessage);
+  const assistantMessage = addSessionMessage("assistant", "", { thinking: "", toolCalls: [], model: "research lab", requestText: text, parentUserMessageId: userMessage.id });
+  const assistantNode = renderMessage(assistantMessage);
+  const contentNode = assistantNode.querySelector(".message-content");
+  scrollChat();
+
+  state.busy = true;
+  const started = performance.now();
+  setRequestStats(`research lab · ${mode} · depth ${depth}`);
+  $("sendBtn").textContent = "X";
+  $("sendBtn").title = "Research running";
+  try {
+    const startedSession = await researchApi("/api/research/start", { goal: text, mode, depth });
+    patchActiveMessageVariant(assistantMessage, {
+      content: "Research plan created. Gathering sources...",
+      thinking: (startedSession.session?.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
+      toolCalls: [{ tool_name: "research.start", ok: true, summary: `${startedSession.session?.plan?.length || 0} plan steps`, data: startedSession.session || {} }],
+      ok: true,
+      model: "research lab"
+    });
+    renderMessageContent(contentNode, assistantMessage);
+    renderActivityBox(assistantNode, assistantMessage);
+    renderMessageActions(assistantNode, assistantMessage);
+
+    const data = await researchApi(`/api/research/${encodeURIComponent(startedSession.session.id)}/run`, {});
+    const session = data.session || {};
+    patchActiveMessageVariant(assistantMessage, {
+      content: session.report || "Research completed without a report.",
+      thinking: (session.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
+      toolCalls: [
+        { tool_name: "research.start", ok: true, summary: `${startedSession.session?.plan?.length || 0} plan steps`, data: startedSession.session || {} },
+        { tool_name: "research.run", ok: true, summary: `${(session.sources || []).length} sources · ${(session.claims || []).length} claims`, data: session }
+      ],
+      ok: true,
+      modelRoute: { category: "research lab", reason: "chat composer more menu" }
+    });
+    assistantNode.classList.toggle("failed", false);
+  } catch (error) {
+    patchActiveMessageVariant(assistantMessage, { ok: false, content: `Research failed: ${error.message}` });
+    assistantNode.classList.toggle("failed", true);
+  } finally {
+    patchActiveMessageVariant(assistantMessage, { latencyMs: Math.round(performance.now() - started) });
+    renderMessageContent(contentNode, assistantMessage);
+    renderActivityBox(assistantNode, assistantMessage);
+    renderMessageActions(assistantNode, assistantMessage);
+    persist();
+    state.busy = false;
+    $("sendBtn").textContent = ">";
+    $("sendBtn").title = "Send";
+    setRequestStats(`${assistantMessage.latencyMs} ms · research lab`);
+    await loadJournal();
+    scrollChat();
+  }
 }
 
 function applyStarterPrompt(kind) {

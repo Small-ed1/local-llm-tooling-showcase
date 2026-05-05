@@ -171,6 +171,7 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 "/api/models",
                 "/api/runtime",
                 "/api/research",
+                "/api/research/list",
                 "/api/tool",
                 "/api/journal/clear",
                 "/api/journal/delete",
@@ -211,7 +212,7 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 self._send_json(_runtime_info(service, events))
                 return
 
-            if clean_path == "/api/research":
+            if clean_path in {"/api/research", "/api/research/list"}:
                 self._send_json({"ok": True, "sessions": research_lab.list_sessions()})
                 return
 
@@ -219,11 +220,11 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 session_id = clean_path.removeprefix("/api/research/").strip("/")
                 if session_id.endswith("/report"):
                     session_id = session_id.removesuffix("/report").strip("/")
-                    session = research_lab.get(session_id)
-                    if not session:
+                    report = research_lab.report(session_id)
+                    if not report and not research_lab.get(session_id):
                         self.send_error(HTTPStatus.NOT_FOUND, "Research session not found")
                         return
-                    self._send_json({"ok": True, "id": session_id, "report": session.get("report", "")})
+                    self._send_json({"ok": True, "id": session_id, "report": report})
                     return
                 session = research_lab.get(session_id)
                 if not session:
@@ -270,6 +271,35 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 except Exception as exc:
                     self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
+
+            if clean_path.startswith("/api/research/"):
+                session_path = clean_path.removeprefix("/api/research/").strip("/")
+                session_id, _, action = session_path.partition("/")
+
+                if action == "run":
+                    try:
+                        session = research_lab.run(session_id)
+                        self._send_json({"ok": True, "session": session})
+                    except FileNotFoundError as exc:
+                        self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                    except Exception as exc:
+                        self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return
+
+                if action == "stop":
+                    try:
+                        session = research_lab.stop(session_id)
+                        self._send_json({"ok": True, "session": session})
+                    except FileNotFoundError as exc:
+                        self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                    return
+
+                if action == "export":
+                    try:
+                        self._send_json({"ok": True, "export": research_lab.export(session_id)})
+                    except FileNotFoundError as exc:
+                        self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                    return
 
             if clean_path == "/api/research/delete":
                 payload = self._read_json_body()
@@ -457,6 +487,15 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 )
                 return
 
+            self.send_error(HTTPStatus.NOT_FOUND)
+
+        def do_DELETE(self) -> None:  # noqa: N802
+            clean_path = urlparse(self.path).path
+            if clean_path.startswith("/api/research/"):
+                session_id = clean_path.removeprefix("/api/research/").strip("/")
+                deleted = research_lab.delete(session_id)
+                self._send_json({"ok": deleted, "deleted": deleted})
+                return
             self.send_error(HTTPStatus.NOT_FOUND)
 
         def log_message(self, format: str, *args) -> None:  # noqa: A003
