@@ -77,11 +77,114 @@ const TOOL_PRESETS = [
   { id: "search_files", label: "Search files", tool: "file_search", args: { query: "README" } }
 ];
 
+const THEME_COLOR_FIELDS = [
+  { key: "primary", label: "Primary background", fallback: "#07100d" },
+  { key: "backgroundSoft", label: "Secondary background", fallback: "#0b1712" },
+  { key: "backgroundStart", label: "Gradient start", fallback: "#050807" },
+  { key: "backgroundEnd", label: "Gradient end", fallback: "#020403" },
+  { key: "backgroundGlow", label: "Background glow", fallback: "#78f0ad" },
+  { key: "backgroundGlowTwo", label: "Background glow 2", fallback: "#529f7b" },
+  { key: "panel", label: "Panel", fallback: "#13261e" },
+  { key: "panelStrong", label: "Strong panel", fallback: "#162b22" },
+  { key: "surface", label: "Surface tint", fallback: "#ffffff" },
+  { key: "surfaceDark", label: "Dark surface tint", fallback: "#000000" },
+  { key: "input", label: "Input background", fallback: "#020604" },
+  { key: "text", label: "Main text", fallback: "#edf7f1" },
+  { key: "muted", label: "Muted text", fallback: "#91a89c" },
+  { key: "mutedTwo", label: "Faint text", fallback: "#647a70" },
+  { key: "accent", label: "Accent", fallback: "#78f0ad" },
+  { key: "accentTwo", label: "Accent 2", fallback: "#b6ffd2" },
+  { key: "accentContrast", label: "Accent text", fallback: "#04100a" },
+  { key: "line", label: "Border", fallback: "#a4ffca" },
+  { key: "lineStrong", label: "Strong border", fallback: "#a4ffca" },
+  { key: "warn", label: "Warning", fallback: "#ffd166" },
+  { key: "bad", label: "Danger", fallback: "#ff6b6b" },
+  { key: "badText", label: "Danger text", fallback: "#ffaaaa" },
+  { key: "ok", label: "Success", fallback: "#7bffa7" },
+  { key: "codeText", label: "Code text", fallback: "#d9fbe7" },
+  { key: "thinkingText", label: "Thinking text", fallback: "#e4d6a8" },
+  { key: "shadow", label: "Shadow", fallback: "#000000" },
+  { key: "grid", label: "Grid lines", fallback: "#ffffff" },
+  { key: "overlay", label: "Overlay", fallback: "#000000" },
+  { key: "userAvatar", label: "User avatar", fallback: "#b0ffd2" }
+];
+
+const DEFAULT_THEME = Object.fromEntries(THEME_COLOR_FIELDS.map((field) => [field.key, field.fallback]));
+DEFAULT_THEME.font = "system";
+
 const THEME_PRESETS = {
-  forest: { label: "Forest cockpit", primary: "#07100d", accent: "#78f0ad", accentTwo: "#b6ffd2", panel: "#13261e", text: "#edf7f1", font: "system" },
-  midnight: { label: "Midnight blue", primary: "#070b18", accent: "#82aaff", accentTwo: "#c3dafe", panel: "#111827", text: "#eef4ff", font: "system" },
-  paper: { label: "Warm paper", primary: "#18120b", accent: "#f2b35d", accentTwo: "#ffe5b4", panel: "#2b2118", text: "#fff7e8", font: "serif" },
-  mono: { label: "Terminal mono", primary: "#050505", accent: "#00ff88", accentTwo: "#bcffd9", panel: "#111111", text: "#effff5", font: "mono" }
+  forest: { label: "Forest cockpit", ...DEFAULT_THEME },
+  midnight: {
+    label: "Midnight blue",
+    ...DEFAULT_THEME,
+    primary: "#070b18",
+    backgroundSoft: "#10182a",
+    backgroundStart: "#030613",
+    backgroundEnd: "#01030a",
+    backgroundGlow: "#82aaff",
+    backgroundGlowTwo: "#536dfe",
+    panel: "#111827",
+    panelStrong: "#1b2740",
+    input: "#050916",
+    text: "#eef4ff",
+    muted: "#9aa8c7",
+    mutedTwo: "#6f7c99",
+    accent: "#82aaff",
+    accentTwo: "#c3dafe",
+    line: "#9bbcff",
+    lineStrong: "#c3dafe",
+    codeText: "#dce8ff",
+    thinkingText: "#d7cffd"
+  },
+  paper: {
+    label: "Warm paper",
+    ...DEFAULT_THEME,
+    primary: "#18120b",
+    backgroundSoft: "#24180e",
+    backgroundStart: "#100a05",
+    backgroundEnd: "#050302",
+    backgroundGlow: "#f2b35d",
+    backgroundGlowTwo: "#a97135",
+    panel: "#2b2118",
+    panelStrong: "#3a2b1d",
+    input: "#160f08",
+    text: "#fff7e8",
+    muted: "#c9ad8c",
+    mutedTwo: "#8d7459",
+    accent: "#f2b35d",
+    accentTwo: "#ffe5b4",
+    line: "#f0c989",
+    lineStrong: "#ffe5b4",
+    accentContrast: "#1a1007",
+    warn: "#ffd166",
+    codeText: "#ffe8bd",
+    thinkingText: "#f7d69d",
+    font: "serif"
+  },
+  mono: {
+    label: "Terminal mono",
+    ...DEFAULT_THEME,
+    primary: "#050505",
+    backgroundSoft: "#0b0b0b",
+    backgroundStart: "#000000",
+    backgroundEnd: "#000000",
+    backgroundGlow: "#00ff88",
+    backgroundGlowTwo: "#008f5d",
+    panel: "#111111",
+    panelStrong: "#191919",
+    input: "#020202",
+    text: "#effff5",
+    muted: "#92bfa8",
+    mutedTwo: "#668270",
+    accent: "#00ff88",
+    accentTwo: "#bcffd9",
+    line: "#58ffa8",
+    lineStrong: "#bcffd9",
+    accentContrast: "#001b0d",
+    ok: "#00ff88",
+    codeText: "#bcffd9",
+    font: "mono"
+  }
 };
 
 const SYSTEM_PROMPT_PRESETS = [
@@ -575,26 +678,23 @@ const DEFAULT_SETTINGS = {
   profilePrefix: "Relevant profile information",
   responseFormat: "",
   sessionSearchQuery: "",
+  deepResearch: {
+    mode: "local",
+    depth: 2
+  },
   runtimeTimeouts: {
     ollama: 120,
     tools: 30
   },
-  theme: {
-    primary: "#07100d",
-    accent: "#78f0ad",
-    accentTwo: "#b6ffd2",
-    panel: "#13261e",
-    text: "#edf7f1",
-    font: "system"
-  },
+  theme: { ...DEFAULT_THEME },
   modelOptions: {
     num_keep: -1,
     temperature: 0.2,
     num_ctx: 4096,
-    num_batch: 512,
+    num_batch: 256,
     num_gpu: -1,
     main_gpu: 0,
-    num_thread: 0,
+    num_thread: 10,
     top_p: 0.95,
     top_k: 40,
     min_p: 0,
@@ -668,7 +768,29 @@ const STORAGE_KEYS = {
   profile: "showcase.ui.profile.v1"
 };
 
+const LEGACY_STORAGE_KEYS = [
+  "showcase.ui.sessions.v1",
+  "showcase.ui.sessions.v2",
+  "showcase.ui.activeSession.v1",
+  "showcase.ui.activeSession.v2",
+  "showcase.ui.memories.v1",
+  "showcase.ui.memories.v2",
+  "showcase.ui.settings.v1",
+  "showcase.ui.settings.v2",
+  "showcase.ui.systemPrompt.v1",
+  "showcase.ui.systemPrompt.v2"
+];
+
+const MAX_SETTINGS_TEXT_CHARS = 12000;
+const MAX_PREFIX_CHARS = 600;
+const MAX_PROFILE_TEXT_CHARS = 8000;
+const MAX_AVATAR_DIMENSION = 192;
+const MAX_AVATAR_DATA_URL_CHARS = 220000;
+
 const LOCAL_STORAGE_SCHEMA_VERSION = 3;
+const CHAT_CONTEXT_MAX_MESSAGES = 24;
+const CHAT_CONTEXT_MAX_CHARS = 24000;
+
 
 const state = {
   sessions: [],
@@ -693,6 +815,7 @@ const state = {
   lastController: null,
   pendingConfirm: null,
   detailPayload: null,
+  composerDeepResearch: false,
   retryMessageId: null,
   editingMessageId: null,
   sessionSearchQuery: "",
@@ -819,14 +942,41 @@ function prettyBytes(bytes) {
   return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-function hexToRgba(hex, alpha = 1) {
+function themeFieldDefault(key) {
+  return THEME_COLOR_FIELDS.find((field) => field.key === key)?.fallback || "#13261e";
+}
+
+function normalizeHex(hex, fallback = "#13261e") {
+  const fallbackClean = String(fallback || "#13261e").replace("#", "");
+  const cleanFallback = /^[0-9a-f]{6}$/i.test(fallbackClean) ? fallbackClean : "13261e";
   const clean = String(hex || "").replace("#", "");
-  if (!/^[0-9a-f]{6}$/i.test(clean)) return "rgba(19, 38, 30, 0.78)";
+  return `#${/^[0-9a-f]{6}$/i.test(clean) ? clean : cleanFallback}`;
+}
+
+function hexToRgba(hex, alpha = 1, fallback = "#13261e") {
+  const clean = normalizeHex(hex, fallback).replace("#", "");
   const value = Number.parseInt(clean, 16);
   const r = (value >> 16) & 255;
   const g = (value >> 8) & 255;
   const b = value & 255;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function normalizeTheme(theme = {}) {
+  const next = { ...DEFAULT_THEME, ...(theme || {}) };
+  THEME_COLOR_FIELDS.forEach((field) => {
+    next[field.key] = normalizeHex(next[field.key], field.fallback);
+  });
+  next.font = next.font || DEFAULT_THEME.font;
+  return next;
+}
+
+function setThemeHexVar(name, theme, key) {
+  document.documentElement.style.setProperty(name, normalizeHex(theme[key], themeFieldDefault(key)));
+}
+
+function setThemeRgbaVar(name, theme, key, alpha) {
+  document.documentElement.style.setProperty(name, hexToRgba(theme[key], alpha, themeFieldDefault(key)));
 }
 
 function fontStack(choice) {
@@ -993,20 +1143,163 @@ function deepMerge(base, override) {
   return result;
 }
 
+function boundedString(value, fallback = "", maxChars = MAX_SETTINGS_TEXT_CHARS) {
+  const text = String(value ?? fallback ?? "");
+  return text.length > maxChars ? text.slice(0, maxChars) : text;
+}
+
+function boundedNumber(value, fallback, min = -Infinity, max = Infinity) {
+  const number = Number(value);
+  const safe = Number.isFinite(number) ? number : fallback;
+  return Math.max(min, Math.min(max, safe));
+}
+
+function sanitizeSettings(rawSettings = {}) {
+  const raw = rawSettings && typeof rawSettings === "object" ? rawSettings : {};
+  const merged = deepMerge(DEFAULT_SETTINGS, raw);
+  const sanitized = {
+    mode: ["user", "dev"].includes(merged.mode) ? merged.mode : DEFAULT_SETTINGS.mode,
+    density: ["comfortable", "compact"].includes(merged.density) ? merged.density : DEFAULT_SETTINGS.density,
+    stream: Boolean(merged.stream),
+    confirm: Boolean(merged.confirm),
+    attachMemories: Boolean(merged.attachMemories),
+    autoScroll: Boolean(merged.autoScroll),
+    enableThinking: Boolean(merged.enableThinking),
+    openThinking: Boolean(merged.openThinking),
+    detailsEnabled: Boolean(merged.detailsEnabled),
+    compactTools: Boolean(merged.compactTools),
+    sidebarCollapsed: Boolean(merged.sidebarCollapsed),
+    journalLimit: boundedNumber(merged.journalLimit, DEFAULT_SETTINGS.journalLimit, 5, 200),
+    messageWidth: boundedNumber(merged.messageWidth, DEFAULT_SETTINGS.messageWidth, 52, 120),
+    memoryPrefix: boundedString(merged.memoryPrefix, DEFAULT_SETTINGS.memoryPrefix, MAX_PREFIX_CHARS).trim() || DEFAULT_SETTINGS.memoryPrefix,
+    profilePrefix: boundedString(merged.profilePrefix, DEFAULT_SETTINGS.profilePrefix, MAX_PREFIX_CHARS).trim() || DEFAULT_SETTINGS.profilePrefix,
+    responseFormat: boundedString(merged.responseFormat, DEFAULT_SETTINGS.responseFormat, MAX_SETTINGS_TEXT_CHARS),
+    sessionSearchQuery: boundedString(merged.sessionSearchQuery, "", 1000),
+    deepResearch: {
+      mode: ["local", "hybrid"].includes(merged.deepResearch?.mode) ? merged.deepResearch.mode : DEFAULT_SETTINGS.deepResearch.mode,
+      depth: boundedNumber(merged.deepResearch?.depth, DEFAULT_SETTINGS.deepResearch.depth, 1, 4)
+    },
+    runtimeTimeouts: {
+      ollama: boundedNumber(merged.runtimeTimeouts?.ollama, DEFAULT_SETTINGS.runtimeTimeouts.ollama, 1, 3600),
+      tools: boundedNumber(merged.runtimeTimeouts?.tools, DEFAULT_SETTINGS.runtimeTimeouts.tools, 1, 3600)
+    },
+    theme: normalizeTheme(merged.theme),
+    modelOptions: {}
+  };
+
+  MODEL_NUMERIC_OPTION_KEYS.forEach((key) => {
+    sanitized.modelOptions[key] = boundedNumber(merged.modelOptions?.[key], DEFAULT_SETTINGS.modelOptions[key]);
+  });
+  MODEL_BOOLEAN_OPTION_KEYS.forEach((key) => {
+    sanitized.modelOptions[key] = Boolean(merged.modelOptions?.[key] ?? DEFAULT_SETTINGS.modelOptions[key]);
+  });
+  sanitized.modelOptions.keep_alive = boundedString(merged.modelOptions?.keep_alive, DEFAULT_SETTINGS.modelOptions.keep_alive, 200).trim();
+  sanitized.modelOptions.stop = Array.isArray(merged.modelOptions?.stop)
+    ? merged.modelOptions.stop.map((line) => boundedString(line, "", 500).trim()).filter(Boolean).slice(0, 32)
+    : [];
+  return sanitized;
+}
+
+function sanitizeProfile(rawProfile = {}) {
+  const raw = rawProfile && typeof rawProfile === "object" ? rawProfile : {};
+  return {
+    name: boundedString(raw.name, "", 200),
+    nickname: boundedString(raw.nickname, "", 200),
+    about: boundedString(raw.about, "", MAX_PROFILE_TEXT_CHARS),
+    preferences: boundedString(raw.preferences, "", MAX_PROFILE_TEXT_CHARS),
+    other: boundedString(raw.other, "", MAX_PROFILE_TEXT_CHARS),
+    userAvatar: sanitizeAvatarDataUrl(raw.userAvatar),
+    assistantAvatar: sanitizeAvatarDataUrl(raw.assistantAvatar)
+  };
+}
+
+function sanitizeAvatarDataUrl(value) {
+  const text = String(value || "");
+  if (!/^data:image\/(png|jpe?g|webp);base64,/i.test(text)) return "";
+  return text.length <= MAX_AVATAR_DATA_URL_CHARS ? text : "";
+}
+
+function isQuotaExceededError(error) {
+  return error?.name === "QuotaExceededError" || error?.name === "NS_ERROR_DOM_QUOTA_REACHED" || error?.code === 22 || error?.code === 1014;
+}
+
+function storageKeyLabel(key) {
+  return Object.entries(STORAGE_KEYS).find(([, value]) => value === key)?.[0] || key;
+}
+
+function pruneDuplicateAndLegacyStorage() {
+  LEGACY_STORAGE_KEYS.forEach((key) => {
+    try { localStorage.removeItem(key); } catch {}
+  });
+  if (state.activeSystemPromptId || state.systemPrompts.length) {
+    try { localStorage.removeItem(STORAGE_KEYS.systemPrompt); } catch {}
+  }
+}
+
+function safeLocalStorageSetItem(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    if (!isQuotaExceededError(error)) throw error;
+    pruneDuplicateAndLegacyStorage();
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (retryError) {
+      if (!isQuotaExceededError(retryError)) throw retryError;
+      console.warn(`Local storage quota exceeded while saving ${key}.`, retryError);
+      return false;
+    }
+  }
+}
+
+function setRequestStats(text, { bad = false } = {}) {
+  const stats = $("requestStats");
+  if (!stats) return;
+  stats.textContent = text;
+  stats.classList.toggle("bad-text", Boolean(bad));
+}
+
+function reportStorageFailure(failedKeys) {
+  if (!failedKeys.length) return;
+  const names = failedKeys.map(storageKeyLabel).join(", ");
+  setRequestStats(`storage full: ${names} not saved`, { bad: true });
+}
+
 function persist({ syncControls = true } = {}) {
   if (syncControls) syncSettingsFromMainControls();
 
   state.sessions.forEach((session) => normalizeSessionMessages(session));
+  state.settings = sanitizeSettings(state.settings);
+  state.profile = sanitizeProfile(state.profile);
+  pruneDuplicateAndLegacyStorage();
 
-  localStorage.setItem(STORAGE_KEYS.schema, String(LOCAL_STORAGE_SCHEMA_VERSION));
-  localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(state.sessions));
-  localStorage.setItem(STORAGE_KEYS.activeSession, state.activeSessionId ?? "");
-  localStorage.setItem(STORAGE_KEYS.memories, JSON.stringify(state.memories));
-  localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(state.settings));
-  localStorage.setItem(STORAGE_KEYS.systemPrompt, $("systemPromptInput")?.value || "");
-  localStorage.setItem(STORAGE_KEYS.systemPrompts, JSON.stringify(state.systemPrompts));
-  localStorage.setItem(STORAGE_KEYS.activeSystemPrompt, state.activeSystemPromptId ?? "");
-  localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(state.profile));
+  const legacyPrompt = !state.activeSystemPromptId && !state.systemPrompts.length
+    ? boundedString($("systemPromptInput")?.value || "", "", 120000)
+    : "";
+
+  const writes = [
+    [STORAGE_KEYS.schema, String(LOCAL_STORAGE_SCHEMA_VERSION)],
+    [STORAGE_KEYS.activeSession, state.activeSessionId ?? ""],
+    [STORAGE_KEYS.activeSystemPrompt, state.activeSystemPromptId ?? ""],
+    [STORAGE_KEYS.settings, JSON.stringify(state.settings)],
+    [STORAGE_KEYS.profile, JSON.stringify(state.profile)],
+    [STORAGE_KEYS.memories, JSON.stringify(state.memories)],
+    [STORAGE_KEYS.systemPrompts, JSON.stringify(state.systemPrompts)],
+    [STORAGE_KEYS.sessions, JSON.stringify(state.sessions)]
+  ];
+
+  if (legacyPrompt) writes.push([STORAGE_KEYS.systemPrompt, legacyPrompt]);
+  else {
+    try { localStorage.removeItem(STORAGE_KEYS.systemPrompt); } catch {}
+  }
+
+  const failedKeys = writes
+    .filter(([key, value]) => !safeLocalStorageSetItem(key, value))
+    .map(([key]) => key);
+  reportStorageFailure(failedKeys);
+  return failedKeys.length === 0;
 }
 
 function loadLocalState() {
@@ -1017,9 +1310,9 @@ function loadLocalState() {
   const oldSettingsPrompt = localStorage.getItem("showcase.ui.systemPrompt.v2");
   try { state.sessions = JSON.parse(localStorage.getItem(STORAGE_KEYS.sessions) || oldSessions || "[]"); } catch { state.sessions = []; }
   try { state.memories = JSON.parse(localStorage.getItem(STORAGE_KEYS.memories) || oldMemories || "[]"); } catch { state.memories = []; }
-  try { state.settings = deepMerge(DEFAULT_SETTINGS, JSON.parse(localStorage.getItem(STORAGE_KEYS.settings) || "{}")); } catch { state.settings = structuredClone(DEFAULT_SETTINGS); }
+  try { state.settings = sanitizeSettings(JSON.parse(localStorage.getItem(STORAGE_KEYS.settings) || "{}")); } catch { state.settings = structuredClone(DEFAULT_SETTINGS); }
   try { state.systemPrompts = JSON.parse(localStorage.getItem(STORAGE_KEYS.systemPrompts) || "[]"); } catch { state.systemPrompts = []; }
-  try { state.profile = deepMerge(DEFAULT_PROFILE, JSON.parse(localStorage.getItem(STORAGE_KEYS.profile) || "{}")); } catch { state.profile = structuredClone(DEFAULT_PROFILE); }
+  try { state.profile = sanitizeProfile(JSON.parse(localStorage.getItem(STORAGE_KEYS.profile) || "{}")); } catch { state.profile = structuredClone(DEFAULT_PROFILE); }
   state.activeSessionId = localStorage.getItem(STORAGE_KEYS.activeSession) || oldActive || null;
   const legacyPrompt = localStorage.getItem(STORAGE_KEYS.systemPrompt) || oldSettingsPrompt || "";
   state.activeSystemPromptId = localStorage.getItem(STORAGE_KEYS.activeSystemPrompt) || null;
@@ -1036,7 +1329,7 @@ function loadLocalState() {
     session.shared = Boolean(session.shared);
   });
   state.sessions.forEach((session) => normalizeSessionMessages(session));
-  if (storedSchema !== LOCAL_STORAGE_SCHEMA_VERSION) localStorage.setItem(STORAGE_KEYS.schema, String(LOCAL_STORAGE_SCHEMA_VERSION));
+  if (storedSchema !== LOCAL_STORAGE_SCHEMA_VERSION) safeLocalStorageSetItem(STORAGE_KEYS.schema, String(LOCAL_STORAGE_SCHEMA_VERSION));
   applySettingsToMainControls();
   if (!state.sessions.length) createSession(false);
   if (state.sessions.find((session) => session.id === state.activeSessionId)?.archived) state.activeSessionId = state.sessions.find((session) => !session.archived)?.id || null;
@@ -1455,20 +1748,55 @@ function sidebarSessionRowHtml(session) {
   `;
 }
 
+function openSidebarSessionFromRail(sessionId) {
+  const session = state.sessions.find((candidate) => candidate.id === sessionId && !candidate.archived);
+  if (!session) return;
+
+  state.activeSessionId = session.id;
+  state.activePage = "chat";
+  closeSidebarSessionMenu();
+  persist();
+  renderAll();
+  closeMobileDrawers();
+
+  requestAnimationFrame(() => {
+    const prompt = $("promptInput");
+    if (prompt && !window.matchMedia("(max-width: 760px)").matches) {
+      prompt.focus({ preventScroll: true });
+    }
+  });
+}
+
 function wireSidebarSessionRows(root) {
+  root.querySelectorAll("[data-session-row]").forEach((row) => {
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("[data-open-session-menu]")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openSidebarSessionFromRail(row.dataset.sessionRow);
+    });
+
+    row.addEventListener("keydown", (event) => {
+      if (!["Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+      openSidebarSessionFromRail(row.dataset.sessionRow);
+    });
+  });
+
   root.querySelectorAll("[data-open-session]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.activeSessionId = button.dataset.openSession;
-      closeSidebarSessionMenu();
-      persist();
-      renderAll();
-      setActivePage("chat");
-      document.body.classList.remove("mobile-left-open");
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openSidebarSessionFromRail(button.dataset.openSession);
     });
   });
 
   root.querySelectorAll("[data-open-session-menu]").forEach((button) => {
     button.addEventListener("click", (event) => {
+      event.preventDefault();
       event.stopPropagation();
       openSidebarSessionMenu(button.dataset.openSessionMenu, button);
     });
@@ -1558,7 +1886,8 @@ function wireSidebarSearch() {
 
   button.addEventListener("click", () => {
     shell.hidden = !shell.hidden;
-    if (!shell.hidden) input.focus();
+    button.setAttribute("aria-expanded", String(!shell.hidden));
+    if (!shell.hidden) input.focus({ preventScroll: true });
   });
 
   input.addEventListener("input", () => {
@@ -2365,11 +2694,74 @@ function buildRuntimeTimeouts() {
   };
 }
 
+function selectedDeepResearchOptions() {
+  return {
+    mode: ["local", "hybrid"].includes($("composerResearchModeSelect")?.value) ? $("composerResearchModeSelect").value : state.settings.deepResearch.mode,
+    depth: Math.max(1, Math.min(4, Number($("composerResearchDepthSelect")?.value || state.settings.deepResearch.depth || 2)))
+  };
+}
+
+function chatContextRole(role) {
+  if (role === "user") return "user";
+  if (role === "assistant") return "assistant";
+  return null;
+}
+
+function messageTextForContext(message) {
+  ensureMessageVariants(message);
+  return String(message?.content || "").trim();
+}
+
+function trimChatContextMessages(messages, maxMessages = CHAT_CONTEXT_MAX_MESSAGES, maxChars = CHAT_CONTEXT_MAX_CHARS) {
+  const trimmed = messages.slice(-Math.max(1, maxMessages));
+  let total = trimmed.reduce((sum, message) => sum + message.content.length, 0);
+  while (trimmed.length > 1 && total > maxChars) {
+    const removed = trimmed.shift();
+    total -= removed?.content?.length || 0;
+  }
+  return trimmed;
+}
+
+function buildChatContextMessages({ assistantMessage = null, requestText = "", userText = "" } = {}) {
+  const session = activeSession();
+  if (!session?.messages?.length) {
+    const fallback = String(requestText || userText || "").trim();
+    return fallback ? [{ role: "user", content: fallback }] : [];
+  }
+
+  const assistantIndex = assistantMessage?.id
+    ? session.messages.findIndex((message) => message.id === assistantMessage.id)
+    : -1;
+  const stopIndex = assistantIndex >= 0 ? assistantIndex : session.messages.length;
+  const parentUserId = assistantMessage?.parentUserMessageId || null;
+  const effectiveRequestText = String(requestText || userText || "").trim();
+  const messages = [];
+
+  session.messages.slice(0, stopIndex).forEach((message) => {
+    const role = chatContextRole(message.role);
+    if (!role) return;
+    let content = messageTextForContext(message);
+    if (role === "user" && parentUserId && message.id === parentUserId && effectiveRequestText) {
+      content = effectiveRequestText;
+    }
+    if (!content) return;
+    const previous = messages[messages.length - 1];
+    if (previous?.role === role) previous.content = `${previous.content}\n\n${content}`;
+    else messages.push({ role, content });
+  });
+
+  if (effectiveRequestText && messages[messages.length - 1]?.content !== effectiveRequestText) {
+    messages.push({ role: "user", content: effectiveRequestText });
+  }
+
+  return trimChatContextMessages(messages);
+}
+
 function previewAutoRoute(text) {
   if ($("modelSelect").value) return;
   const profile = routeModelForText(text);
   if (!profile) return;
-  $("requestStats").textContent = `auto → ${profile.category}`;
+  setRequestStats(`auto → ${profile.category}`);
 }
 
 async function sendMessage() {
@@ -2385,7 +2777,71 @@ async function sendMessage() {
   const assistantMessage = addSessionMessage("assistant", "", { thinking: "", toolCalls: [], model: $("modelSelect").value || "auto", options: modelOptions, requestText: text, parentUserMessageId: userMessage.id });
   const assistantNode = renderMessage(assistantMessage);
   scrollChat();
+  if (state.composerDeepResearch) {
+    await requestDeepResearchResponse({ userText: text, assistantMessage, assistantNode });
+    return;
+  }
   await requestAssistantResponse({ userText: text, requestText: text, assistantMessage, assistantNode });
+}
+
+async function requestDeepResearchResponse({ userText, assistantMessage, assistantNode }) {
+  if (state.busy) return;
+  state.busy = true;
+  const started = performance.now();
+  const contentNode = assistantNode?.querySelector(".message-content");
+  const options = selectedDeepResearchOptions();
+  patchActiveMessageVariant(assistantMessage, {
+    content: "Starting local deep research...",
+    thinking: `Mode: ${options.mode}\nDepth: ${options.depth}`,
+    toolCalls: [],
+    ok: true,
+    model: "local research",
+    requestText: userText
+  });
+  renderMessageContent(contentNode, assistantMessage);
+  renderActivityBox(assistantNode, assistantMessage);
+  setRequestStats(`deep research · depth ${options.depth}`);
+  $("sendBtn").textContent = "X";
+  $("sendBtn").title = "Deep research running";
+  try {
+    const start = await researchApi("/api/research/start", { goal: userText, mode: options.mode, depth: options.depth });
+    patchActiveMessageVariant(assistantMessage, {
+      content: "Research plan created. Gathering local sources...",
+      toolCalls: [{ tool_name: "research.start", ok: true, summary: `${start.session?.plan?.length || 0} plan steps`, data: start.session || {} }]
+    });
+    renderMessageContent(contentNode, assistantMessage);
+    renderActivityBox(assistantNode, assistantMessage);
+    const run = await researchApi("/api/research/run", { id: start.session.id });
+    const session = run.session || {};
+    patchActiveMessageVariant(assistantMessage, {
+      content: session.report || "Deep research completed without a report.",
+      thinking: (session.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
+      toolCalls: [
+        { tool_name: "research.start", ok: true, summary: `${start.session?.plan?.length || 0} plan steps`, data: start.session || {} },
+        { tool_name: "research.run", ok: true, summary: `${(session.sources || []).length} sources`, data: session }
+      ],
+      ok: true,
+      modelRoute: { category: "deep research", reason: "composer deep research" }
+    });
+    assistantNode.classList.toggle("failed", false);
+    renderMessageContent(contentNode, assistantMessage);
+    renderActivityBox(assistantNode, assistantMessage);
+    renderMessageActions(assistantNode, assistantMessage);
+  } catch (error) {
+    patchActiveMessageVariant(assistantMessage, { ok: false, content: `Deep research failed: ${error.message}` });
+    assistantNode.classList.toggle("failed", true);
+    renderMessageContent(contentNode, assistantMessage);
+    renderMessageActions(assistantNode, assistantMessage);
+  } finally {
+    patchActiveMessageVariant(assistantMessage, { latencyMs: Math.round(performance.now() - started) });
+    persist();
+    state.busy = false;
+    $("sendBtn").textContent = ">";
+    $("sendBtn").title = "Send";
+    setRequestStats(`${assistantMessage.latencyMs} ms · deep research`);
+    await loadJournal();
+    scrollChat();
+  }
 }
 
 async function requestAssistantResponse({ userText, requestText, assistantMessage, assistantNode = null, modelOverride = null, retryMeta = null }) {
@@ -2423,9 +2879,10 @@ async function requestAssistantResponse({ userText, requestText, assistantMessag
     system_prompt: buildSystemPrompt(),
     options: modelOptions,
     response_format: buildResponseFormat(),
+    messages: buildChatContextMessages({ assistantMessage, requestText: requestText || userText, userText }),
     ...buildRuntimeTimeouts()
   };
-  $("requestStats").textContent = "running...";
+  setRequestStats("running...");
   $("sendBtn").textContent = "X";
   $("sendBtn").title = "Stop";
 
@@ -2512,7 +2969,7 @@ async function requestAssistantResponse({ userText, requestText, assistantMessag
     state.lastController = null;
     $("sendBtn").textContent = ">";
     $("sendBtn").title = "Send";
-    $("requestStats").textContent = `${assistantMessage.latencyMs} ms · ${assistantMessage.content.length} chars`;
+    setRequestStats(`${assistantMessage.latencyMs} ms · ${assistantMessage.content.length} chars`);
     await loadJournal();
     scrollChat();
   }
@@ -2700,6 +3157,7 @@ async function readNdjsonStream(response, onChunk) {
 }
 
 async function runAutonomous() {
+  if (state.busy) return;
   const goal = $("promptInput").value.trim();
   if (!goal) return;
   state.busy = true;
@@ -2729,6 +3187,7 @@ async function runAutonomous() {
 }
 
 async function runManualTool() {
+  if (state.busy) return;
   closeMobileDrawers();
   const tool = $("toolSelect").value;
   const root = $("toolResult");
@@ -2762,14 +3221,14 @@ async function runManualTool() {
 }
 
 async function runManualToolFallback(tool, args) {
-  const text = fallbackPromptForTool(tool, args);
-  const res = await fetch("/api/ask", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, confirm: $("toolConfirmToggle").checked, stream: false, ...buildRuntimeTimeouts() })
-  });
-  const data = await res.json();
-  return { tool_call: { tool_name: tool, ok: Boolean(data.ok), summary: data.message || "Fallback /api/ask completed.", data: { fallback: true, sent_text: text, tool_calls: data.tool_calls || [] } } };
+  return {
+    tool_call: {
+      tool_name: tool,
+      ok: false,
+      summary: "/api/tool failed or is unavailable. Refusing to fallback to /api/ask because that would start a hidden model request.",
+      data: { fallback: false, arguments: args }
+    }
+  };
 }
 
 function fallbackPromptForTool(tool, args) {
@@ -2805,6 +3264,8 @@ function applySettingsToMainControls() {
   if ($("confirmToggle")) $("confirmToggle").checked = Boolean(state.settings.confirm);
   if ($("memoryToggle")) $("memoryToggle").checked = Boolean(state.settings.attachMemories);
   if ($("autoScrollToggle")) $("autoScrollToggle").checked = Boolean(state.settings.autoScroll);
+  if ($("composerResearchDepthSelect")) $("composerResearchDepthSelect").value = String(state.settings.deepResearch?.depth || DEFAULT_SETTINGS.deepResearch.depth);
+  if ($("composerResearchModeSelect")) $("composerResearchModeSelect").value = state.settings.deepResearch?.mode || DEFAULT_SETTINGS.deepResearch.mode;
 
   applySettingsVisuals();
 }
@@ -2814,15 +3275,84 @@ function applySettingsVisuals() {
   document.documentElement.dataset.compactTools = state.settings.compactTools ? "true" : "false";
   document.documentElement.style.setProperty("--message-max", `${Number(state.settings.messageWidth) || 78}ch`);
   document.body.classList.toggle("sidebar-collapsed", Boolean(state.settings.sidebarCollapsed));
-  const theme = deepMerge(DEFAULT_SETTINGS.theme, state.settings.theme || {});
-  document.documentElement.style.setProperty("--bg", theme.primary || DEFAULT_SETTINGS.theme.primary);
-  document.documentElement.style.setProperty("--accent", theme.accent || DEFAULT_SETTINGS.theme.accent);
-  document.documentElement.style.setProperty("--accent-2", theme.accentTwo || DEFAULT_SETTINGS.theme.accentTwo);
-  document.documentElement.style.setProperty("--text", theme.text || DEFAULT_SETTINGS.theme.text);
-  document.documentElement.style.setProperty("--panel", hexToRgba(theme.panel || DEFAULT_SETTINGS.theme.panel, 0.74));
-  document.documentElement.style.setProperty("--panel-strong", hexToRgba(theme.panel || DEFAULT_SETTINGS.theme.panel, 0.92));
-  document.documentElement.style.setProperty("--line", hexToRgba(theme.accent || DEFAULT_SETTINGS.theme.accent, 0.13));
-  document.documentElement.style.setProperty("--line-strong", hexToRgba(theme.accent || DEFAULT_SETTINGS.theme.accent, 0.25));
+
+  const theme = normalizeTheme(state.settings.theme);
+  setThemeHexVar("--bg", theme, "primary");
+  setThemeHexVar("--bg-2", theme, "backgroundSoft");
+  setThemeHexVar("--bg-start", theme, "backgroundStart");
+  setThemeHexVar("--bg-end", theme, "backgroundEnd");
+  setThemeRgbaVar("--bg-glow", theme, "backgroundGlow", 0.16);
+  setThemeRgbaVar("--bg-glow-2", theme, "backgroundGlowTwo", 0.14);
+  setThemeHexVar("--text", theme, "text");
+  setThemeHexVar("--muted", theme, "muted");
+  setThemeHexVar("--muted-2", theme, "mutedTwo");
+  setThemeHexVar("--accent", theme, "accent");
+  setThemeHexVar("--accent-2", theme, "accentTwo");
+  setThemeHexVar("--accent-contrast", theme, "accentContrast");
+  setThemeHexVar("--warn", theme, "warn");
+  setThemeHexVar("--bad", theme, "bad");
+  setThemeHexVar("--bad-text", theme, "badText");
+  setThemeHexVar("--ok", theme, "ok");
+  setThemeHexVar("--code-text", theme, "codeText");
+  setThemeHexVar("--thinking-text", theme, "thinkingText");
+
+  setThemeRgbaVar("--panel", theme, "panel", 0.74);
+  setThemeRgbaVar("--panel-strong", theme, "panelStrong", 0.92);
+  setThemeRgbaVar("--glass-start", theme, "panel", 0.78);
+  setThemeRgbaVar("--glass-end", theme, "input", 0.76);
+  setThemeRgbaVar("--drawer-start", theme, "panel", 0.96);
+  setThemeRgbaVar("--drawer-end", theme, "input", 0.98);
+  setThemeRgbaVar("--popover-bg", theme, "input", 0.96);
+  setThemeRgbaVar("--menu-bg", theme, "input", 0.98);
+  setThemeRgbaVar("--input-bg", theme, "input", 0.46);
+  setThemeRgbaVar("--input-bg-soft", theme, "input", 0.26);
+  setThemeRgbaVar("--input-bg-medium", theme, "input", 0.35);
+  setThemeRgbaVar("--input-bg-focus", theme, "input", 0.62);
+
+  setThemeRgbaVar("--line", theme, "line", 0.13);
+  setThemeRgbaVar("--line-strong", theme, "lineStrong", 0.25);
+  setThemeRgbaVar("--line-soft", theme, "line", 0.08);
+  setThemeRgbaVar("--line-soft-2", theme, "line", 0.11);
+
+  [0.025, 0.03, 0.035, 0.04, 0.055].forEach((alpha) => {
+    setThemeRgbaVar(`--surface-${String(alpha).replace("0.", "")}`, theme, "surface", alpha);
+  });
+  [0.16, 0.18, 0.2, 0.22, 0.24, 0.28, 0.32, 0.54].forEach((alpha) => {
+    setThemeRgbaVar(`--surface-dark-${String(alpha).replace("0.", "")}`, theme, "surfaceDark", alpha);
+  });
+  [0.055, 0.06, 0.07, 0.075, 0.08, 0.09, 0.12, 0.16, 0.18, 0.22, 0.28, 0.32, 0.34, 0.35, 0.36, 0.5, 0.55, 0.58, 0.9].forEach((alpha) => {
+    setThemeRgbaVar(`--accent-${String(alpha).replace("0.", "").replace(".", "")}`, theme, "accent", alpha);
+  });
+  [0.16, 0.35, 0.8, 0.9].forEach((alpha) => {
+    setThemeRgbaVar(`--accent-two-${String(alpha).replace("0.", "").replace(".", "")}`, theme, "accentTwo", alpha);
+  });
+  [0.68, 0.72, 0.78, 0.82].forEach((alpha) => {
+    setThemeRgbaVar(`--accent-contrast-${String(alpha).replace("0.", "")}`, theme, "accentContrast", alpha);
+  });
+  [0.045, 0.05, 0.16, 0.22, 0.26, 0.28, 0.36].forEach((alpha) => {
+    setThemeRgbaVar(`--warn-${String(alpha).replace("0.", "").replace(".", "")}`, theme, "warn", alpha);
+  });
+  [0.055, 0.06, 0.28, 0.34, 0.42].forEach((alpha) => {
+    setThemeRgbaVar(`--bad-${String(alpha).replace("0.", "").replace(".", "")}`, theme, "bad", alpha);
+  });
+  [0.055, 0.26, 0.28].forEach((alpha) => {
+    setThemeRgbaVar(`--ok-${String(alpha).replace("0.", "").replace(".", "")}`, theme, "ok", alpha);
+  });
+
+  setThemeRgbaVar("--shadow-color", theme, "shadow", 0.38);
+  setThemeRgbaVar("--shadow-soft", theme, "shadow", 0.32);
+  setThemeRgbaVar("--shadow-popup", theme, "shadow", 0.28);
+  document.documentElement.style.setProperty("--shadow", `0 24px 70px ${hexToRgba(theme.shadow, 0.38, themeFieldDefault("shadow"))}`);
+  document.documentElement.style.setProperty("--brand-shadow", `0 14px 40px ${hexToRgba(theme.accent, 0.18, themeFieldDefault("accent"))}`);
+  setThemeRgbaVar("--grid-line", theme, "grid", 0.018);
+  setThemeRgbaVar("--scrim", theme, "overlay", 0.54);
+  setThemeRgbaVar("--mask", theme, "overlay", 0.75);
+  setThemeRgbaVar("--user-avatar-strong", theme, "userAvatar", 0.9);
+  setThemeRgbaVar("--user-avatar-soft", theme, "userAvatar", 0.16);
+
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) metaTheme.setAttribute("content", normalizeHex(theme.primary, themeFieldDefault("primary")));
+
   document.documentElement.style.setProperty("--font", fontStack(theme.font));
   applyModeVisibility();
 }
@@ -2879,7 +3409,7 @@ function newSystemPromptDraft() {
   $("systemPromptTitleInput").focus();
 }
 
-function saveSystemPromptFromEditor() {
+function saveSystemPromptFromEditor({ persistNow = true } = {}) {
   const title = $("systemPromptTitleInput").value.trim() || "Untitled prompt";
   const payload = {
     title,
@@ -2897,7 +3427,7 @@ function saveSystemPromptFromEditor() {
   }
   state.activeSystemPromptId = prompt.id;
   $("systemPromptInput").value = prompt.fullPrompt || "";
-  persist();
+  if (persistNow) persist();
   renderSystemPromptControls();
 }
 
@@ -2963,21 +3493,65 @@ function updateAvatarPreviews() {
   assistant?.classList.toggle("empty", !state.profile.assistantAvatar);
 }
 
-function handleAvatarUpload(kind, file) {
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")));
+    reader.addEventListener("error", () => reject(reader.error || new Error("Image read failed")));
+    reader.readAsDataURL(file);
+  });
+}
+
+function imageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image));
+    image.addEventListener("error", () => reject(new Error("Image decode failed")));
+    image.src = dataUrl;
+  });
+}
+
+async function compactAvatarFile(file) {
+  const originalDataUrl = await readFileAsDataUrl(file);
+  if (originalDataUrl.length <= MAX_AVATAR_DATA_URL_CHARS) return originalDataUrl;
+
+  const image = await imageFromDataUrl(originalDataUrl);
+  const scale = Math.min(1, MAX_AVATAR_DIMENSION / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+  const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+  const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0, width, height);
+
+  const preferredType = file.type === "image/png" ? "image/png" : "image/webp";
+  let compact = canvas.toDataURL(preferredType, 0.82);
+  if (compact.length > MAX_AVATAR_DATA_URL_CHARS) compact = canvas.toDataURL("image/jpeg", 0.76);
+  if (compact.length > MAX_AVATAR_DATA_URL_CHARS) compact = canvas.toDataURL("image/jpeg", 0.62);
+  return compact.length <= MAX_AVATAR_DATA_URL_CHARS ? compact : "";
+}
+
+async function handleAvatarUpload(kind, file) {
   if (!file) return;
   if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
     openCollectionDetail("Unsupported image", "Use a PNG, JPG, or WebP image for profile icons.", { type: file.type, name: file.name });
     return;
   }
-  const reader = new FileReader();
-  reader.addEventListener("load", () => {
-    if (kind === "user") state.profile.userAvatar = String(reader.result || "");
-    else state.profile.assistantAvatar = String(reader.result || "");
+  try {
+    const dataUrl = await compactAvatarFile(file);
+    if (!dataUrl) {
+      openCollectionDetail("Image too large", "That avatar is still too large for browser-local storage after compression. Try a smaller square image.", { type: file.type, name: file.name, size: file.size });
+      return;
+    }
+    if (kind === "user") state.profile.userAvatar = dataUrl;
+    else state.profile.assistantAvatar = dataUrl;
     updateAvatarPreviews();
     persist();
     renderChat();
-  });
-  reader.readAsDataURL(file);
+  } catch (error) {
+    openCollectionDetail("Avatar upload failed", error.message || "The browser could not read that image.", { type: file.type, name: file.name, size: file.size });
+  }
 }
 
 function syncSettingsModal() {
@@ -2991,17 +3565,18 @@ function syncSettingsModal() {
   $("settingsConfirmToggle").checked = Boolean(state.settings.confirm);
   $("settingsMemoryToggle").checked = Boolean(state.settings.attachMemories);
   $("settingsAutoScrollToggle").checked = Boolean(state.settings.autoScroll);
+  $("settingsResearchDepthSelect").value = String(state.settings.deepResearch?.depth || DEFAULT_SETTINGS.deepResearch.depth);
+  $("settingsResearchModeSelect").value = state.settings.deepResearch?.mode || DEFAULT_SETTINGS.deepResearch.mode;
   $("settingsOpenThinkingToggle").checked = Boolean(state.settings.openThinking);
   $("settingsDetailsToggle").checked = Boolean(state.settings.detailsEnabled);
   $("settingsCompactToolsToggle").checked = Boolean(state.settings.compactTools);
   $("settingsJournalLimit").value = state.settings.journalLimit || 50;
   $("settingsMessageWidth").value = state.settings.messageWidth || 78;
-  const theme = deepMerge(DEFAULT_SETTINGS.theme, state.settings.theme || {});
-  $("themePrimaryColor").value = theme.primary;
-  $("themeAccentColor").value = theme.accent;
-  $("themeAccentTwoColor").value = theme.accentTwo;
-  $("themePanelColor").value = theme.panel;
-  $("themeTextColor").value = theme.text;
+  const theme = normalizeTheme(state.settings.theme);
+  THEME_COLOR_FIELDS.forEach(({ key }) => {
+    const input = $(`theme${toPascalCase(key)}Color`);
+    if (input) input.value = theme[key];
+  });
   $("themeFontSelect").value = theme.font || "system";
   $("settingsMemoryPrefix").value = state.settings.memoryPrefix || DEFAULT_SETTINGS.memoryPrefix;
   $("settingsResponseFormat").value = state.settings.responseFormat || "";
@@ -3045,13 +3620,31 @@ function renderThemePresetSelect() {
   select.innerHTML = '<option value="">Custom</option>' + Object.entries(THEME_PRESETS).map(([id, preset]) => `<option value="${escapeHtml(id)}">${escapeHtml(preset.label)}</option>`).join("");
 }
 
+function toPascalCase(value) {
+  return String(value || "").replace(/(^|[^a-z0-9])([a-z0-9])/gi, (_, __, letter) => letter.toUpperCase());
+}
+
+function themeInputId(key) {
+  return `theme${toPascalCase(key)}Color`;
+}
+
+function readThemeFromControls(fallbackTheme = state.settings.theme) {
+  const fallback = normalizeTheme(fallbackTheme);
+  const next = {};
+  THEME_COLOR_FIELDS.forEach(({ key }) => {
+    next[key] = settingValue(themeInputId(key), fallback[key]);
+  });
+  next.font = settingValue("themeFontSelect", fallback.font || DEFAULT_THEME.font);
+  return normalizeTheme(next);
+}
+
 function applyThemePreset(id) {
   const preset = THEME_PRESETS[id];
   if (!preset) return;
-  state.settings.theme = { primary: preset.primary, accent: preset.accent, accentTwo: preset.accentTwo, panel: preset.panel, text: preset.text, font: preset.font };
-  ["Primary", "Accent", "AccentTwo", "Panel", "Text"].forEach((name) => {
-    const key = name.charAt(0).toLowerCase() + name.slice(1);
-    const input = $(`theme${name}Color`);
+  const { label: _label, ...colors } = preset;
+  state.settings.theme = normalizeTheme(colors);
+  THEME_COLOR_FIELDS.forEach(({ key }) => {
+    const input = $(themeInputId(key));
     if (input) input.value = state.settings.theme[key];
   });
   if ($("themeFontSelect")) $("themeFontSelect").value = state.settings.theme.font;
@@ -3231,6 +3824,10 @@ function readBehaviorSettingsFromModal() {
   state.settings.confirm = $("settingsConfirmToggle")?.checked ?? state.settings.confirm;
   state.settings.attachMemories = $("settingsMemoryToggle")?.checked ?? state.settings.attachMemories;
   state.settings.autoScroll = $("settingsAutoScrollToggle")?.checked ?? state.settings.autoScroll;
+  state.settings.deepResearch = {
+    mode: ["local", "hybrid"].includes($("settingsResearchModeSelect")?.value) ? $("settingsResearchModeSelect").value : DEFAULT_SETTINGS.deepResearch.mode,
+    depth: settingNumber("settingsResearchDepthSelect", DEFAULT_SETTINGS.deepResearch.depth, 1, 4)
+  };
 
   state.settings.openThinking = $("settingsOpenThinkingToggle")?.checked ?? state.settings.openThinking;
   state.settings.detailsEnabled = $("settingsDetailsToggle")?.checked ?? state.settings.detailsEnabled;
@@ -3266,14 +3863,7 @@ function saveSettings() {
 
   readBehaviorSettingsFromModal();
 
-  state.settings.theme = {
-    primary: settingValue("themePrimaryColor", state.settings.theme?.primary || DEFAULT_SETTINGS.theme.primary),
-    accent: settingValue("themeAccentColor", state.settings.theme?.accent || DEFAULT_SETTINGS.theme.accent),
-    accentTwo: settingValue("themeAccentTwoColor", state.settings.theme?.accentTwo || DEFAULT_SETTINGS.theme.accentTwo),
-    panel: settingValue("themePanelColor", state.settings.theme?.panel || DEFAULT_SETTINGS.theme.panel),
-    text: settingValue("themeTextColor", state.settings.theme?.text || DEFAULT_SETTINGS.theme.text),
-    font: settingValue("themeFontSelect", state.settings.theme?.font || DEFAULT_SETTINGS.theme.font)
-  };
+  state.settings.theme = readThemeFromControls(state.settings.theme);
 
   state.settings.memoryPrefix = settingValue("settingsMemoryPrefix", state.settings.memoryPrefix || DEFAULT_SETTINGS.memoryPrefix).trim() || DEFAULT_SETTINGS.memoryPrefix;
   state.settings.responseFormat = settingValue("settingsResponseFormat", state.settings.responseFormat || "");
@@ -3315,10 +3905,10 @@ function saveSettings() {
     $("systemPromptTitleInput")?.value.trim() ||
     $("settingsSystemPromptInput")?.value.trim()
   ) {
-    saveSystemPromptFromEditor();
+    saveSystemPromptFromEditor({ persistNow: false });
   }
 
-  state.profile = {
+  state.profile = sanitizeProfile({
     name: settingValue("profileNameInput", state.profile.name || "").trim(),
     nickname: settingValue("profileNicknameInput", state.profile.nickname || "").trim(),
     about: settingValue("profileAboutInput", state.profile.about || "").trim(),
@@ -3326,7 +3916,7 @@ function saveSettings() {
     other: settingValue("profileOtherInput", state.profile.other || "").trim(),
     userAvatar: state.profile.userAvatar || "",
     assistantAvatar: state.profile.assistantAvatar || ""
-  };
+  });
 
   if ($("systemPromptInput")) {
     $("systemPromptInput").value = activeSystemPrompt()?.fullPrompt || "";
@@ -3597,16 +4187,10 @@ function bindModalChrome() {
   $("themePresetSelect")?.addEventListener("change", (event) => applyThemePreset(event.target.value));
   $("profileUserAvatarInput")?.addEventListener("change", (event) => handleAvatarUpload("user", event.target.files?.[0]));
   $("profileAssistantAvatarInput")?.addEventListener("change", (event) => handleAvatarUpload("assistant", event.target.files?.[0]));
-  ["themePrimaryColor", "themeAccentColor", "themeAccentTwoColor", "themePanelColor", "themeTextColor", "themeFontSelect"].forEach((id) => {
+  [...THEME_COLOR_FIELDS.map(({ key }) => themeInputId(key)), "themeFontSelect"].forEach((id) => {
     $(id)?.addEventListener("input", () => {
-      state.settings.theme = {
-        primary: $("themePrimaryColor").value,
-        accent: $("themeAccentColor").value,
-        accentTwo: $("themeAccentTwoColor").value,
-        panel: $("themePanelColor").value,
-        text: $("themeTextColor").value,
-        font: $("themeFontSelect").value
-      };
+      if ($("themePresetSelect")) $("themePresetSelect").value = "";
+      state.settings.theme = readThemeFromControls(state.settings.theme);
       applySettingsVisuals();
     });
   });
@@ -3748,8 +4332,8 @@ function loadSystemPromptPreset() {
 
 function importProfile(text) {
   const parsed = parseImportText(text);
-  if (typeof parsed === "object" && parsed) state.profile = deepMerge(DEFAULT_PROFILE, parsed.profile || parsed);
-  else state.profile = { ...state.profile, about: String(parsed || "") };
+  if (typeof parsed === "object" && parsed) state.profile = sanitizeProfile({ ...state.profile, ...(parsed.profile || parsed) });
+  else state.profile = sanitizeProfile({ ...state.profile, about: String(parsed || "") });
   persist();
   syncSettingsModal();
 }
@@ -3777,7 +4361,7 @@ function clearActiveSession() {
 }
 
 function clearBrowserState() {
-  Object.values(STORAGE_KEYS).forEach((key) => localStorage.removeItem(key));
+  [...Object.values(STORAGE_KEYS), ...LEGACY_STORAGE_KEYS].forEach((key) => localStorage.removeItem(key));
   state.sessions = [];
   state.memories = [];
   state.settings = structuredClone(DEFAULT_SETTINGS);
@@ -3875,6 +4459,17 @@ function bindEvents() {
   $("toolSelect").addEventListener("change", updateToolExample);
   $("runToolBtn").addEventListener("click", runManualTool);
   $("runAutonomousBtn").addEventListener("click", runAutonomous);
+  $("composerFileBtn")?.addEventListener("click", () => $("composerFileInput")?.click());
+  $("composerFileInput")?.addEventListener("change", insertComposerFiles);
+  $("composerMoreBtn")?.addEventListener("click", toggleComposerMoreMenu);
+  $("deepResearchBtn")?.addEventListener("click", toggleComposerDeepResearch);
+  $("composerSystemPromptBtn")?.addEventListener("click", () => { toggleComposerMoreMenu(false); const box = $("systemPromptInput"); box.hidden = !box.hidden; if (!box.hidden) box.focus(); });
+  $("composerClearBtn")?.addEventListener("click", () => { toggleComposerMoreMenu(false); clearActiveSession(); });
+  $("composerSettingsBtn")?.addEventListener("click", () => { toggleComposerMoreMenu(false); openSettings(); });
+  ["composerResearchDepthSelect", "composerResearchModeSelect"].forEach((id) => $(id)?.addEventListener("change", () => {
+    const options = selectedDeepResearchOptions();
+    setRequestStats(`deep research ready · ${options.mode} · depth ${options.depth}`);
+  }));
   $("newSessionBtn").addEventListener("click", () => createSession(true));
   $("sidebarNewChatBtn")?.addEventListener("click", (event) => { event.stopPropagation(); createSession(true); });
   $("sidebarCollapseBtn")?.addEventListener("click", (event) => { event.stopPropagation(); toggleSidebarCollapsed(); });
@@ -3915,6 +4510,41 @@ function appendPrompt(text) {
   input.focus();
 }
 
+function toggleComposerMoreMenu(force = null) {
+  const menu = $("composerMoreMenu");
+  if (!menu) return;
+  menu.hidden = force === null ? !menu.hidden : !force;
+}
+
+function toggleComposerDeepResearch() {
+  state.composerDeepResearch = !state.composerDeepResearch;
+  const panel = $("deepResearchPanel");
+  const button = $("deepResearchBtn");
+  if (panel) panel.hidden = !state.composerDeepResearch;
+  if (button) {
+    button.classList.toggle("active", state.composerDeepResearch);
+    button.setAttribute("aria-pressed", String(state.composerDeepResearch));
+  }
+  if (state.composerDeepResearch) {
+    const options = selectedDeepResearchOptions();
+    setRequestStats(`deep research ready · ${options.mode} · depth ${options.depth}`);
+  } else {
+    setRequestStats("idle");
+  }
+}
+
+function insertComposerFiles(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  files.forEach((file) => {
+    readImportFile(file, (text) => {
+      appendPrompt(`File: ${file.name}\n\n${text}`);
+      setRequestStats(`inserted ${file.name}`);
+    });
+  });
+  event.target.value = "";
+}
+
 function applyStarterPrompt(kind) {
   const prompts = {
     code: "Review this code/system design and point out exact fixes:\n",
@@ -3951,3 +4581,16 @@ async function boot() {
 }
 
 boot();
+
+
+/* ===== Research Lab sidecar ===== */
+
+async function researchApi(path, payload = null) {
+  const options = payload
+    ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }
+    : { method: "GET" };
+  const res = await fetch(path, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) throw new Error(data.error || `Research API failed with HTTP ${res.status}`);
+  return data;
+}

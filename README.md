@@ -242,7 +242,7 @@ examples/integrations/hyprland/
 
 ## Release Status
 
-Current release candidate: `v1.0.0-rc.1`.
+Current release: `v1.0.0`.
 
 The `v1.0.0` line is intended for local demos, portfolio review, and stable local development. The default network binding is loopback-only, the planner-visible tool set is documented, and browser/backend state locations are documented for migration and cleanup.
 

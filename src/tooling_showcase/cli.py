@@ -8,6 +8,7 @@ from tooling_showcase.benchmarking import benchmark_command
 from tooling_showcase.config import load_config
 from tooling_showcase.doctor import run_doctor
 from tooling_showcase.ollama_wrapper import run_ollama_wrapper
+from tooling_showcase.research import ResearchLab
 from tooling_showcase.service import ShowcaseService
 from tooling_showcase.server import run_server
 from tooling_showcase.tui import run_tui
@@ -74,6 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ollama endpoint (default: http://127.0.0.1:11434)",
     )
 
+    research = sub.add_parser("research", help="Run a sidecar research session")
+    research.add_argument("goal", help="Research goal or question.")
+    research.add_argument("--mode", choices=["local", "hybrid"], default="local")
+    research.add_argument("--depth", type=int, default=2)
+    research.add_argument("--no-run", action="store_true", help="Only create the plan; do not gather sources.")
+
     return parser
 
 
@@ -124,6 +131,14 @@ def main() -> int:
 
     if args.command == "doctor":
         return run_doctor(config, json_output=args.json)
+
+    if args.command == "research":
+        lab = ResearchLab(service)
+        session = lab.start(args.goal, mode=args.mode, depth=args.depth)
+        if not args.no_run:
+            session = lab.run(session["id"])
+        print(session.get("report") or json.dumps(session, indent=2, sort_keys=True))
+        return 0 if session.get("status") != "failed" else 1
 
     if args.command == "tui":
         return run_tui(service)

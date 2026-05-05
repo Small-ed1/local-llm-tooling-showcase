@@ -4,6 +4,7 @@ from tooling_showcase.config import OllamaConfig, ShellPolicy, ShowcaseConfig
 from tooling_showcase.benchmarking import save_benchmark_results
 from tooling_showcase.models import ActionResult, ToolCall
 from tooling_showcase.service import ShowcaseService
+import tooling_showcase.service as service_module
 
 
 def make_config(tmp_path: Path) -> ShowcaseConfig:
@@ -82,6 +83,23 @@ def test_adapter_inventory_tool(tmp_path: Path):
     result = service.handle("show adapters")
     assert result.ok is True
     assert "Northstar" in result.message
+
+
+def test_model_cards_include_live_unbenchmarked_models(tmp_path: Path, monkeypatch):
+    service = ShowcaseService(make_config(tmp_path))
+    monkeypatch.setattr(service_module, "list_ollama_models", lambda config: (["qwen3:8b"], None))
+
+    cards = service.model_cards()
+
+    assert cards == [
+        {
+            "model": "qwen3:8b",
+            "category": "unprofiled",
+            "job": "run tooling-showcase benchmark to assign this model",
+            "summary": "No local benchmark profile has been recorded yet.",
+            "chat_capable": True,
+        }
+    ]
 
 
 def test_service_allows_model_to_choose_and_run_tool(tmp_path: Path):

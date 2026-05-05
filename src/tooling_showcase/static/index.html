@@ -112,9 +112,36 @@
             <div class="composer-input-shell">
               <textarea id="promptInput" class="prompt-input" rows="3" placeholder="Ask the local runtime something... Shift+Enter for newline, Enter to send."></textarea>
               <div class="composer-inline-actions" aria-label="Composer actions">
+                <button id="composerFileBtn" class="circle-button file-button" title="Insert file text" aria-label="Insert file text">+</button>
+                <button id="composerMoreBtn" class="circle-button more-button" title="More options" aria-label="More options">...</button>
+                <button id="deepResearchBtn" class="circle-button deep-research-button" title="Deep research" aria-label="Deep research">D</button>
                 <button id="runAutonomousBtn" class="circle-button plan-button" title="Run task" aria-label="Run task">P</button>
                 <button id="sendBtn" class="circle-button send-button" title="Send" aria-label="Send">&gt;</button>
               </div>
+            </div>
+            <input id="composerFileInput" type="file" accept=".txt,.md,.json,.yaml,.yml,.py,.js,.ts,.tsx,.html,.css,.sh,text/*,application/json" multiple hidden />
+            <div id="composerMoreMenu" class="composer-more-menu" hidden>
+              <button id="composerSystemPromptBtn" class="ghost-button">System prompt</button>
+              <button id="composerClearBtn" class="ghost-button">Clear chat</button>
+              <button id="composerSettingsBtn" class="ghost-button">Settings</button>
+            </div>
+            <div id="deepResearchPanel" class="deep-research-panel" hidden>
+              <strong>Deep research</strong>
+              <label class="field-label" for="composerResearchDepthSelect">Depth
+                <select id="composerResearchDepthSelect" class="input">
+                  <option value="1">1 - light</option>
+                  <option value="2">2 - standard</option>
+                  <option value="3">3 - deep</option>
+                  <option value="4">4 - exhaustive</option>
+                </select>
+              </label>
+              <label class="field-label" for="composerResearchModeSelect">Mode
+                <select id="composerResearchModeSelect" class="input">
+                  <option value="local">Local only</option>
+                  <option value="hybrid">Hybrid</option>
+                </select>
+              </label>
+              <span>Send will create a local research report in this chat.</span>
             </div>
             <div class="composer-meta-row"><span id="requestStats" class="request-stats">idle</span></div>
             <textarea id="systemPromptInput" class="system-prompt" rows="4" placeholder="Optional system prompt override..." hidden></textarea>
@@ -314,6 +341,18 @@
             <label class="setting-line"><span>Stream responses</span><input id="settingsStreamToggle" type="checkbox" /></label>
             <label class="setting-line"><span>Confirm risky tool actions</span><input id="settingsConfirmToggle" type="checkbox" /></label>
             <label class="setting-line"><span>Auto-scroll chat</span><input id="settingsAutoScrollToggle" type="checkbox" /></label>
+            <label class="field-label" for="settingsResearchDepthSelect">Default deep research depth</label>
+            <select id="settingsResearchDepthSelect" class="input">
+              <option value="1">1 - light</option>
+              <option value="2">2 - standard</option>
+              <option value="3">3 - deep</option>
+              <option value="4">4 - exhaustive</option>
+            </select>
+            <label class="field-label" for="settingsResearchModeSelect">Default deep research mode</label>
+            <select id="settingsResearchModeSelect" class="input">
+              <option value="local">Local only</option>
+              <option value="hybrid">Hybrid</option>
+            </select>
           </section>
         </div>
       </div>
@@ -442,11 +481,35 @@
           <label class="field-label" for="themePresetSelect">Theme preset</label>
           <select id="themePresetSelect" class="input"></select>
           <div class="theme-settings-grid">
-            <label class="color-field"><span>Primary</span><input id="themePrimaryColor" type="color" /></label>
+            <label class="color-field"><span>Primary background</span><input id="themePrimaryColor" type="color" /></label>
+            <label class="color-field"><span>Secondary background</span><input id="themeBackgroundSoftColor" type="color" /></label>
+            <label class="color-field"><span>Gradient start</span><input id="themeBackgroundStartColor" type="color" /></label>
+            <label class="color-field"><span>Gradient end</span><input id="themeBackgroundEndColor" type="color" /></label>
+            <label class="color-field"><span>Background glow</span><input id="themeBackgroundGlowColor" type="color" /></label>
+            <label class="color-field"><span>Background glow 2</span><input id="themeBackgroundGlowTwoColor" type="color" /></label>
+            <label class="color-field"><span>Panel</span><input id="themePanelColor" type="color" /></label>
+            <label class="color-field"><span>Strong panel</span><input id="themePanelStrongColor" type="color" /></label>
+            <label class="color-field"><span>Surface tint</span><input id="themeSurfaceColor" type="color" /></label>
+            <label class="color-field"><span>Dark surface tint</span><input id="themeSurfaceDarkColor" type="color" /></label>
+            <label class="color-field"><span>Input background</span><input id="themeInputColor" type="color" /></label>
+            <label class="color-field"><span>Main text</span><input id="themeTextColor" type="color" /></label>
+            <label class="color-field"><span>Muted text</span><input id="themeMutedColor" type="color" /></label>
+            <label class="color-field"><span>Faint text</span><input id="themeMutedTwoColor" type="color" /></label>
             <label class="color-field"><span>Accent</span><input id="themeAccentColor" type="color" /></label>
             <label class="color-field"><span>Accent 2</span><input id="themeAccentTwoColor" type="color" /></label>
-            <label class="color-field"><span>Panel</span><input id="themePanelColor" type="color" /></label>
-            <label class="color-field"><span>Text</span><input id="themeTextColor" type="color" /></label>
+            <label class="color-field"><span>Accent text</span><input id="themeAccentContrastColor" type="color" /></label>
+            <label class="color-field"><span>Border</span><input id="themeLineColor" type="color" /></label>
+            <label class="color-field"><span>Strong border</span><input id="themeLineStrongColor" type="color" /></label>
+            <label class="color-field"><span>Warning</span><input id="themeWarnColor" type="color" /></label>
+            <label class="color-field"><span>Danger</span><input id="themeBadColor" type="color" /></label>
+            <label class="color-field"><span>Danger text</span><input id="themeBadTextColor" type="color" /></label>
+            <label class="color-field"><span>Success</span><input id="themeOkColor" type="color" /></label>
+            <label class="color-field"><span>Code text</span><input id="themeCodeTextColor" type="color" /></label>
+            <label class="color-field"><span>Thinking text</span><input id="themeThinkingTextColor" type="color" /></label>
+            <label class="color-field"><span>Shadow</span><input id="themeShadowColor" type="color" /></label>
+            <label class="color-field"><span>Grid lines</span><input id="themeGridColor" type="color" /></label>
+            <label class="color-field"><span>Overlay</span><input id="themeOverlayColor" type="color" /></label>
+            <label class="color-field"><span>User avatar</span><input id="themeUserAvatarColor" type="color" /></label>
             <label class="number-field"><span>Font</span><select id="themeFontSelect" class="input"><option value="system">System</option><option value="serif">Serif</option><option value="mono">Mono</option><option value="rounded">Rounded</option></select></label>
           </div>
         </section>

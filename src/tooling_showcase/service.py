@@ -8,7 +8,7 @@ from typing import Any, Iterator
 
 from tooling_showcase.config import ShowcaseConfig
 from tooling_showcase.journal import EventJournal
-from tooling_showcase.benchmarking import benchmark_profiles, default_benchmark_path, load_benchmark_results
+from tooling_showcase.benchmarking import benchmark_profiles, default_benchmark_path, list_ollama_models, load_benchmark_results
 from tooling_showcase.model_routing import route_model
 from tooling_showcase.models import ActionResult, ToolCall
 from tooling_showcase.ollama import OllamaClient
@@ -33,6 +33,52 @@ def _split_thinking_text(message: str) -> tuple[str, str]:
     return "", text.strip()
 
 
+def _normalize_chat_messages(messages: list[dict[str, Any]] | None, current_text: str) -> list[dict[str, str]]:
+    cleaned: list[dict[str, str]] = []
+    for item in messages or []:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        if role not in {"user", "assistant", "system"}:
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        cleaned.append({"role": role, "content": content})
+    if current_text and (not cleaned or cleaned[-1]["role"] != "user" or cleaned[-1]["content"].strip() != current_text.strip()):
+        cleaned.append({"role": "user", "content": current_text.strip()})
+    return cleaned
+
+
+def _conversation_history_text(messages: list[dict[str, str]]) -> str:
+    if not messages:
+        return "No previous chat messages were provided."
+    rendered = []
+    for item in messages[-12:]:
+        role = item.get("role", "user").title()
+        content = str(item.get("content") or "").strip()
+        if content:
+            rendered.append(f"{role}: {content}")
+    return "\n\n".join(rendered) or "No previous chat messages were provided."
+
+
+def _replace_last_user_message(messages: list[dict[str, str]], content: str) -> list[dict[str, str]]:
+    if not messages:
+        return [{"role": "user", "content": content}]
+    replaced = [dict(item) for item in messages]
+    for index in range(len(replaced) - 1, -1, -1):
+        if replaced[index].get("role") == "user":
+            replaced[index] = {"role": "user", "content": content}
+            return replaced
+    replaced.append({"role": "user", "content": content})
+    return replaced
+
+
+def _has_contextual_reference(text: str) -> bool:
+    lowered = text.lower()
+    return any(token in lowered for token in (" it", "that", "this", "them", "those", "these", "above", "previous", "earlier", "same", "again"))
+
+
 class ShowcaseService:
     def __init__(self, config: ShowcaseConfig) -> None:
         self.config = config
@@ -52,6 +98,7 @@ class ShowcaseService:
         options: dict[str, Any] | None = None,
         ollama_options: dict[str, Any] | None = None,
         response_format: str | dict | None = None,
+        messages: list[dict[str, Any]] | None = None,
         stream: bool = False,
         allow_tools: bool = True,
         max_tool_calls: int = 4,
@@ -69,6 +116,9 @@ class ShowcaseService:
         text = text.strip()
         if not text:
             return ActionResult(False, "Empty message.")
+
+        chat_messages = _normalize_chat_messages(messages, text)
+        tool_signal_text = f"{_conversation_history_text(chat_messages)}\n\nCurrent user message: {text}" if _has_contextual_reference(text) else text
 
         model_route = route_model(text)
         model_route_data = model_route.as_dict()
@@ -144,6 +194,7 @@ class ShowcaseService:
                 model_route=model_route_data,
                 think=enable_thinking,
                 ollama_timeout_seconds=ollama_timeout_seconds,
+                messages=chat_messages,
             )
             self._log_chat(
                 text=text,
@@ -168,6 +219,7 @@ class ShowcaseService:
                 show_tool_traces=show_tool_traces,
                 think=enable_thinking,
                 ollama_timeout_seconds=ollama_timeout_seconds,
+                messages=chat_messages,
             )
             result.tool_calls.extend(contextual_calls)
             self._log_chat(
@@ -180,7 +232,7 @@ class ShowcaseService:
             )
             return result
 
-        if not self._likely_needs_tools(text):
+        if not self._likely_needs_tools(tool_signal_text):
             result = self._answer_direct(
                 text,
                 model=selected_model,
@@ -190,6 +242,7 @@ class ShowcaseService:
                 model_route=model_route_data,
                 think=enable_thinking,
                 ollama_timeout_seconds=ollama_timeout_seconds,
+                messages=chat_messages,
             )
             self._log_chat(
                 text=text,
@@ -210,6 +263,7 @@ class ShowcaseService:
                     previous_tool_context=tool_context,
                     step_index=step_index,
                     max_tool_calls=max_tool_calls,
+                    messages=chat_messages,
                 ),
                 model=selected_model,
                 system_prompt=self._tool_decision_system_prompt(system_prompt),
@@ -255,6 +309,7 @@ class ShowcaseService:
                     think=enable_thinking,
                     recovery_note=f"The tool planner returned invalid JSON: {exc}",
                     ollama_timeout_seconds=ollama_timeout_seconds,
+                    messages=chat_messages,
                 )
                 fallback.tool_calls.extend(tool_calls)
                 self._log_chat(
@@ -368,6 +423,7 @@ class ShowcaseService:
             show_tool_traces=show_tool_traces,
             think=enable_thinking,
             ollama_timeout_seconds=ollama_timeout_seconds,
+            messages=chat_messages,
         )
         result.tool_calls.extend(tool_calls)
 
@@ -391,6 +447,7 @@ class ShowcaseService:
         options: dict[str, Any] | None = None,
         ollama_options: dict[str, Any] | None = None,
         response_format: str | dict | None = None,
+        messages: list[dict[str, Any]] | None = None,
         allow_tools: bool = True,
         max_tool_calls: int = 4,
         show_tool_traces: bool = False,
@@ -401,6 +458,9 @@ class ShowcaseService:
         if not text:
             yield self._stream_final(ActionResult(False, "Empty message."))
             return
+
+        chat_messages = _normalize_chat_messages(messages, text)
+        tool_signal_text = f"{_conversation_history_text(chat_messages)}\n\nCurrent user message: {text}" if _has_contextual_reference(text) else text
 
         model_route = route_model(text)
         model_route_data = model_route.as_dict()
@@ -454,6 +514,7 @@ class ShowcaseService:
                 model_route=model_route_data,
                 think=enable_thinking,
                 ollama_timeout_seconds=ollama_timeout_seconds,
+                messages=chat_messages,
             )
             self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=[], mode="chat_no_tools")
             return
@@ -475,11 +536,12 @@ class ShowcaseService:
                 think=enable_thinking,
                 ollama_timeout_seconds=ollama_timeout_seconds,
                 existing_tool_calls=tool_calls,
+                messages=chat_messages,
             )
             self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=tool_calls, mode="contextual_web_answer")
             return
 
-        if not self._likely_needs_tools(text):
+        if not self._likely_needs_tools(tool_signal_text):
             result = yield from self._stream_answer_direct(
                 text,
                 model=selected_model,
@@ -489,6 +551,7 @@ class ShowcaseService:
                 model_route=model_route_data,
                 think=enable_thinking,
                 ollama_timeout_seconds=ollama_timeout_seconds,
+                messages=chat_messages,
             )
             self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=[], mode="chat_direct_no_tool_signals")
             return
@@ -496,7 +559,7 @@ class ShowcaseService:
         executed_signatures: set[tuple[str, str]] = set()
         for step_index in range(max_tool_calls):
             decision_result = self._ask_ollama(
-                self._build_tool_decision_prompt(user_text=text, available_tools=planner_tools, previous_tool_context=tool_context, step_index=step_index, max_tool_calls=max_tool_calls),
+                self._build_tool_decision_prompt(user_text=text, available_tools=planner_tools, previous_tool_context=tool_context, step_index=step_index, max_tool_calls=max_tool_calls, messages=chat_messages),
                 model=selected_model,
                 system_prompt=self._tool_decision_system_prompt(system_prompt),
                 response_format="json",
@@ -526,6 +589,7 @@ class ShowcaseService:
                     recovery_note=f"The tool planner returned invalid JSON: {exc}",
                     ollama_timeout_seconds=ollama_timeout_seconds,
                     existing_tool_calls=tool_calls,
+                    messages=chat_messages,
                 )
                 self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=tool_calls, mode="invalid_tool_json_recovered")
                 return
@@ -586,6 +650,7 @@ class ShowcaseService:
             think=enable_thinking,
             ollama_timeout_seconds=ollama_timeout_seconds,
             existing_tool_calls=tool_calls,
+            messages=chat_messages,
         )
         self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=tool_calls, mode="model_tool_loop")
 
@@ -601,6 +666,20 @@ class ShowcaseService:
         profiles = benchmark_profiles(benchmark_path)
         if profiles:
             return profiles
+        installed, error = list_ollama_models(self.config)
+        saved_models = results.get("models", {})
+        saved_names = saved_models if isinstance(saved_models, dict) else {}
+        model_names = sorted(set(installed) | set(results.get("last_inventory", [])) | set(saved_names), key=str.lower)
+        if not model_names and error:
+            return [
+                {
+                    "model": None,
+                    "category": "unavailable",
+                    "job": "check Ollama connectivity or run tooling-showcase benchmark --list-models",
+                    "summary": error,
+                    "chat_capable": False,
+                }
+            ]
         return [
             {
                 "model": model,
@@ -609,7 +688,7 @@ class ShowcaseService:
                 "summary": "No local benchmark profile has been recorded yet.",
                 "chat_capable": True,
             }
-            for model in sorted(results.get("models", {}))
+            for model in model_names
         ]
 
     def _route_with_benchmark_profile(self, route: dict[str, Any]) -> dict[str, Any]:
@@ -689,6 +768,7 @@ class ShowcaseService:
         model_route: dict[str, Any],
         think: bool = False,
         ollama_timeout_seconds: int | None = None,
+        messages: list[dict[str, str]] | None = None,
     ) -> ActionResult:
         result = self._ask_ollama(
             text,
@@ -699,6 +779,7 @@ class ShowcaseService:
             think=think,
             stream=False,
             timeout_seconds=ollama_timeout_seconds,
+            messages=messages,
         )
         if response_format is None:
             result.message = self._normalize_answer_text(result.message)
@@ -733,6 +814,7 @@ class ShowcaseService:
         think: bool = False,
         recovery_note: str | None = None,
         ollama_timeout_seconds: int | None = None,
+        messages: list[dict[str, str]] | None = None,
     ) -> ActionResult:
         prompt = self._build_final_prompt(
             user_text=user_text,
@@ -749,6 +831,7 @@ class ShowcaseService:
             think=think,
             stream=False,
             timeout_seconds=ollama_timeout_seconds,
+            messages=_replace_last_user_message(messages or [], prompt),
         )
         result.data = {
             **(result.data or {}),
@@ -769,6 +852,7 @@ class ShowcaseService:
         model_route: dict[str, Any],
         think: bool,
         ollama_timeout_seconds: int | None,
+        messages: list[dict[str, str]] | None = None,
     ) -> Iterator[dict]:
         result = yield from self._stream_ollama_answer(
             text,
@@ -781,6 +865,7 @@ class ShowcaseService:
             ollama_timeout_seconds=ollama_timeout_seconds,
             tool_calls=[],
             tool_steps=None,
+            messages=messages,
         )
         if response_format is None:
             result.message = self._normalize_answer_text(result.message)
@@ -802,6 +887,7 @@ class ShowcaseService:
         ollama_timeout_seconds: int | None,
         recovery_note: str | None = None,
         existing_tool_calls: list[ToolCall] | None = None,
+        messages: list[dict[str, str]] | None = None,
     ) -> Iterator[dict]:
         prompt = self._build_final_prompt(
             user_text=user_text,
@@ -820,6 +906,7 @@ class ShowcaseService:
             ollama_timeout_seconds=ollama_timeout_seconds,
             tool_calls=existing_tool_calls or [],
             tool_steps=len(tool_context),
+            messages=_replace_last_user_message(messages or [], prompt),
         )
         yield self._stream_final(result)
         return result
@@ -837,6 +924,7 @@ class ShowcaseService:
         ollama_timeout_seconds: int | None,
         tool_calls: list[ToolCall],
         tool_steps: int | None,
+        messages: list[dict[str, str]] | None = None,
     ) -> Iterator[dict]:
         content_parts: list[str] = []
         thinking_parts: list[str] = []
@@ -850,6 +938,7 @@ class ShowcaseService:
                 options=options,
                 think=think,
                 timeout_seconds=ollama_timeout_seconds,
+                messages=messages,
             )
         else:
             fallback = self._ask_ollama(
@@ -861,6 +950,7 @@ class ShowcaseService:
                 think=think,
                 stream=False,
                 timeout_seconds=ollama_timeout_seconds,
+                messages=messages,
             )
             events = iter([{"type": "content_delta", "delta": fallback.message}, {"type": "ollama_done", "data": fallback.data or {}}])
 
@@ -933,6 +1023,7 @@ class ShowcaseService:
         previous_tool_context: list[str],
         step_index: int,
         max_tool_calls: int,
+        messages: list[dict[str, str]] | None = None,
     ) -> str:
         context = "\n\n".join(previous_tool_context).strip()
         if not context:
@@ -965,7 +1056,10 @@ Available tools:
 Previous tool results:
 {context}
 
-User message:
+Recent chat context:
+{_conversation_history_text(messages or [])}
+
+Current user message:
 {user_text}
 
 Return exactly one JSON object in one of these forms:
@@ -1189,6 +1283,7 @@ Do not describe yourself as a package, wrapper, showcase assistant, or local too
         stream: bool = False,
         think: bool = False,
         timeout_seconds: int | None = None,
+        messages: list[dict[str, str]] | None = None,
     ):
         signature = inspect.signature(self.ollama.ask)
         params = signature.parameters
@@ -1201,6 +1296,7 @@ Do not describe yourself as a package, wrapper, showcase assistant, or local too
             "stream": stream,
             "think": think,
             "timeout_seconds": timeout_seconds,
+            "messages": messages,
         }
         accepted = {
             key: value
@@ -1268,6 +1364,7 @@ Do not describe yourself as a package, wrapper, showcase assistant, or local too
             previous_tool_context=kwargs.get("previous_tool_context", []),
             step_index=kwargs.get("step_index", 0),
             max_tool_calls=kwargs.get("max_tool_calls", 4),
+            messages=kwargs.get("messages"),
         )
 
     def run_autonomous(

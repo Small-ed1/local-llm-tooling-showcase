@@ -15,6 +15,7 @@ import mimetypes
 from tooling_showcase.benchmarking import benchmark_profiles, default_benchmark_path, load_benchmark_results
 from tooling_showcase.catalog import tool_stability
 from tooling_showcase.models import ActionResult
+from tooling_showcase.research import ResearchLab
 from tooling_showcase.service import ShowcaseService
 
 
@@ -148,6 +149,8 @@ ADAPTER_USAGE = {
 
 
 def run_server(service: ShowcaseService, host: str, port: int) -> int:
+    research_lab = ResearchLab(service)
+
     class Handler(BaseHTTPRequestHandler):
         def do_HEAD(self) -> None:  # noqa: N802
             clean_path = urlparse(self.path).path
@@ -167,6 +170,7 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 "/api/tools",
                 "/api/models",
                 "/api/runtime",
+                "/api/research",
                 "/api/tool",
                 "/api/journal/clear",
                 "/api/journal/delete",
@@ -207,6 +211,27 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 self._send_json(_runtime_info(service, events))
                 return
 
+            if clean_path == "/api/research":
+                self._send_json({"ok": True, "sessions": research_lab.list_sessions()})
+                return
+
+            if clean_path.startswith("/api/research/"):
+                session_id = clean_path.removeprefix("/api/research/").strip("/")
+                if session_id.endswith("/report"):
+                    session_id = session_id.removesuffix("/report").strip("/")
+                    session = research_lab.get(session_id)
+                    if not session:
+                        self.send_error(HTTPStatus.NOT_FOUND, "Research session not found")
+                        return
+                    self._send_json({"ok": True, "id": session_id, "report": session.get("report", "")})
+                    return
+                session = research_lab.get(session_id)
+                if not session:
+                    self.send_error(HTTPStatus.NOT_FOUND, "Research session not found")
+                    return
+                self._send_json({"ok": True, "session": session})
+                return
+
             if clean_path in {"/", "/index.html"}:
                 self._send_static_file(STATIC_DIR / "index.html")
                 return
@@ -221,6 +246,37 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
         def do_POST(self) -> None:  # noqa: N802
             clean_path = urlparse(self.path).path
 
+            if clean_path == "/api/research/start":
+                payload = self._read_json_body()
+                try:
+                    session = research_lab.start(
+                        str(payload.get("goal", "")),
+                        mode=str(payload.get("mode", "local")),
+                        depth=_safe_int(payload.get("depth"), 2, minimum=1, maximum=4),
+                    )
+                    self._send_json({"ok": True, "session": session})
+                except Exception as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            if clean_path == "/api/research/run":
+                payload = self._read_json_body()
+                session_id = str(payload.get("id", "")).strip()
+                try:
+                    session = research_lab.run(session_id)
+                    self._send_json({"ok": True, "session": session})
+                except FileNotFoundError as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                except Exception as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            if clean_path == "/api/research/delete":
+                payload = self._read_json_body()
+                deleted = research_lab.delete(str(payload.get("id", "")).strip())
+                self._send_json({"ok": deleted, "deleted": deleted})
+                return
+
             if clean_path == "/api/ask":
                 payload = self._read_json_body()
                 text = str(payload.get("text", "")).strip()
@@ -229,7 +285,9 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 system_prompt = _optional_string(payload.get("system_prompt"))
                 stream = bool(payload.get("stream", False))
                 options = payload.get("options") if isinstance(payload.get("options"), dict) else None
+                options = _stabilize_ollama_options(options)
                 response_format = _response_format(payload.get("response_format"))
+                messages = _coerce_chat_messages(payload.get("messages"))
                 ollama_timeout_seconds = _optional_timeout(payload.get("ollama_timeout_seconds"), service.config.ollama.timeout_seconds)
                 tool_timeout_seconds = _optional_timeout(payload.get("tool_timeout_seconds"), service.config.shell_policy.timeout_seconds)
 
@@ -243,7 +301,8 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                             system_prompt=system_prompt,
                             options=options,
                             response_format=response_format,
-                            allow_tools=bool(payload.get("allow_tools", True)),
+                            messages=messages,
+                            allow_tools=bool(payload.get("allow_tools", False)),
                             max_tool_calls=_safe_int(payload.get("max_tool_calls"), 4, minimum=0, maximum=12),
                             show_tool_traces=bool(payload.get("show_tool_traces", False)),
                             ollama_timeout_seconds=ollama_timeout_seconds,
@@ -262,7 +321,8 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                         stream=stream,
                         options=options,
                         response_format=response_format,
-                        allow_tools=bool(payload.get("allow_tools", True)),
+                        messages=messages,
+                        allow_tools=bool(payload.get("allow_tools", False)),
                         max_tool_calls=_safe_int(payload.get("max_tool_calls"), 4, minimum=0, maximum=12),
                         show_tool_traces=bool(payload.get("show_tool_traces", False)),
                         ollama_timeout_seconds=ollama_timeout_seconds,
@@ -495,6 +555,7 @@ def _call_service_handle(
     stream: bool,
     options: dict | None,
     response_format: str | dict | None = None,
+    messages: list[dict[str, str]] | None = None,
     allow_tools: bool = True,
     max_tool_calls: int = 4,
     show_tool_traces: bool = False,
@@ -513,6 +574,7 @@ def _call_service_handle(
             "stream": stream,
             "options": options,
             "response_format": response_format,
+            "messages": messages,
             "allow_tools": allow_tools,
             "max_tool_calls": max_tool_calls,
             "show_tool_traces": show_tool_traces,
@@ -895,6 +957,30 @@ def _split_thinking(message: str) -> tuple[str, str]:
     return "", text.strip()
 
 
+
+def _stabilize_ollama_options(value) -> dict:
+    opts = dict(value or {})
+
+    opts["num_ctx"] = 4096
+    opts["num_batch"] = 128
+    opts["num_gpu"] = -1
+    opts["main_gpu"] = 0
+    opts["num_thread"] = 6
+
+    try:
+        predict = int(opts.get("num_predict", 512))
+    except (TypeError, ValueError):
+        predict = 512
+
+    if predict < 0 or predict > 512:
+        predict = 512
+
+    opts["num_predict"] = predict
+    opts.pop("enable_thinking", None)
+
+    return opts
+
+
 def _safe_int(value, default: int, *, minimum: int, maximum: int) -> int:
     try:
         parsed = int(value)
@@ -911,6 +997,30 @@ def _optional_timeout(value, default: int) -> int | None:
     if parsed == default:
         return None
     return max(1, min(3600, parsed))
+
+
+def _coerce_chat_messages(value, *, max_messages: int = 32, max_chars: int = 32000) -> list[dict[str, str]] | None:
+    if not isinstance(value, list):
+        return None
+    cleaned: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        if role not in {"user", "assistant", "system"}:
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        cleaned.append({"role": role, "content": content[:8000]})
+    if not cleaned:
+        return None
+    cleaned = cleaned[-max_messages:]
+    total = sum(len(item["content"]) for item in cleaned)
+    while len(cleaned) > 1 and total > max_chars:
+        removed = cleaned.pop(0)
+        total -= len(removed["content"])
+    return cleaned
 
 
 def _response_format(value) -> str | dict | None:

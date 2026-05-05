@@ -17,7 +17,7 @@ def test_package_version_is_v1():
 def test_readme_release_status_and_known_limits_are_prominent():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "Current release candidate: `v1.0.0-rc.1`" in readme
+    assert "Current release: `v1.0.0`" in readme
     assert readme.index("## Known Limits") < readme.index("## Screenshots")
 
 
