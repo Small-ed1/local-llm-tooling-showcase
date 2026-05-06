@@ -40,6 +40,8 @@ class ResearchStorage:
         )
         if session.report:
             self.report_path(session.id).write_text(session.report, encoding="utf-8", newline="\n")
+        elif self.report_path(session.id).exists():
+            self.report_path(session.id).unlink()
         return payload
 
     def read_report(self, session_id: str) -> str:

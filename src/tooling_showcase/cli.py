@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ollama endpoint (default: http://127.0.0.1:11434)",
     )
 
-    research = sub.add_parser("research", help="Run a sidecar research session")
+    research = sub.add_parser("research", help="Run a Research Lab session")
     research.add_argument("goal", help="Research goal or question.")
     research.add_argument("--mode", choices=["local", "hybrid"], default="local")
     research.add_argument("--depth", type=int, default=2)

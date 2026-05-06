@@ -286,6 +286,22 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                         self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                     return
 
+                if action == "update":
+                    payload = self._read_json_body()
+                    try:
+                        session = research_lab.update(
+                            session_id,
+                            goal=str(payload.get("goal", "")),
+                            mode=str(payload.get("mode", "local")),
+                            depth=_safe_int(payload.get("depth"), 2, minimum=1, maximum=4),
+                        )
+                        self._send_json({"ok": True, "session": session})
+                    except FileNotFoundError as exc:
+                        self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                    except Exception as exc:
+                        self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return
+
                 if action == "stop":
                     try:
                         session = research_lab.stop(session_id)
@@ -1015,7 +1031,6 @@ def _stabilize_ollama_options(value) -> dict:
         predict = 512
 
     opts["num_predict"] = predict
-    opts.pop("enable_thinking", None)
 
     return opts
 

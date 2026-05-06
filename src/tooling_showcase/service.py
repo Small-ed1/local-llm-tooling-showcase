@@ -4,6 +4,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import inspect
 import json
+import re
 from typing import Any, Iterator
 
 from tooling_showcase.config import ShowcaseConfig
@@ -1233,7 +1234,8 @@ Do not describe yourself as a package, wrapper, showcase assistant, or local too
         return value
 
     def _supports_thinking(self, model: str) -> bool:
-        return "qwen3" in model.lower()
+        lowered = model.lower()
+        return bool(re.search(r"\bqwen(?:2\.5|3(?:\.5)?)", lowered))
 
     def _extract_think(self, options: dict[str, Any] | None) -> tuple[bool, dict[str, Any]]:
         clean_options = dict(options or {})

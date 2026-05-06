@@ -18,6 +18,7 @@ class OllamaClient:
 
     def _stabilize_payload(self, payload: dict) -> dict:
         opts = dict(payload.get("options") or {})
+        payload["think"] = bool(payload.get("think", False) or opts.get("enable_thinking", False) or opts.get("think", False))
         opts["num_ctx"] = 4096
         opts["num_batch"] = 128
         opts["num_gpu"] = -1
@@ -33,8 +34,8 @@ class OllamaClient:
 
         opts["num_predict"] = predict
         opts.pop("enable_thinking", None)
+        opts.pop("think", None)
         payload["options"] = opts
-        payload["think"] = bool(payload.get("think", False))
         return payload
 
     @contextmanager

@@ -918,6 +918,10 @@ function renderSafeMarkdown(text) {
 function renderMessageContent(root, message) {
   if (message.role === "assistant") {
     root.classList.add("rendered");
+    if (message.researchPlan?.status === "planned") {
+      renderResearchPlanCard(root, message);
+      return;
+    }
     root.innerHTML = renderSafeMarkdown(message.content || "");
     return;
   }
@@ -1042,6 +1046,7 @@ function makeMessageVariant(message, extra = {}) {
     modelRoute: extra.modelRoute ?? message.modelRoute ?? null,
     latencyMs: extra.latencyMs ?? message.latencyMs ?? null,
     requestText: extra.requestText ?? message.requestText ?? null,
+    researchPlan: extra.researchPlan ?? message.researchPlan ?? null,
     editMeta: extra.editMeta ?? null,
     retryMeta: extra.retryMeta ?? null
   };
@@ -1053,7 +1058,7 @@ function syncMessageFromActiveVariant(message) {
   const index = Math.max(0, Math.min(Number(message.activeVariant) || 0, variants.length - 1));
   message.activeVariant = index;
   const variant = variants[index];
-  ["content", "thinking", "toolCalls", "createdAt", "ok", "model", "options", "modelRoute", "latencyMs", "requestText", "editMeta", "retryMeta"].forEach((key) => {
+  ["content", "thinking", "toolCalls", "createdAt", "ok", "model", "options", "modelRoute", "latencyMs", "requestText", "researchPlan", "editMeta", "retryMeta"].forEach((key) => {
     message[key] = variant[key];
   });
   return message;
@@ -1451,6 +1456,7 @@ function addSessionMessage(role, content, extra = {}) {
     modelRoute: extra.modelRoute ?? null,
     latencyMs: extra.latencyMs ?? null,
     requestText: extra.requestText ?? null,
+    researchPlan: extra.researchPlan ?? null,
     parentUserMessageId: extra.parentUserMessageId ?? null,
     activeVariant: 0,
     variants: []
@@ -2036,6 +2042,146 @@ function renderInlineEditor(root, message) {
     event.stopPropagation();
     finishUserMessageEdit(message.id, textarea.value);
   });
+}
+
+function renderResearchPlanCard(root, message) {
+  const session = message.researchPlan?.session || {};
+  const plan = Array.isArray(session.plan) ? session.plan : [];
+  root.classList.remove("rendered");
+  root.innerHTML = `
+    <section class="research-plan-card" data-research-plan-id="${escapeHtml(session.id || "")}">
+      <div class="research-plan-heading">
+        <span class="status-pill muted">plan mode</span>
+        <strong>Review Research Lab plan</strong>
+        <small>Nothing runs until you confirm. Plan model calls: ${(session.model_calls || []).length}</small>
+      </div>
+      <label class="field-label">Goal
+        <textarea class="code-input research-plan-goal" rows="4">${escapeHtml(session.goal || message.requestText || "")}</textarea>
+      </label>
+      <div class="research-plan-settings">
+        <label class="field-label">Research type
+          <select class="input research-plan-depth">
+            <option value="1" ${Number(session.depth) === 1 ? "selected" : ""}>Light Research</option>
+            <option value="3" ${Number(session.depth || 3) === 3 ? "selected" : ""}>Deep Research</option>
+          </select>
+        </label>
+        <label class="field-label">Source mode
+          <select class="input research-plan-mode">
+            <option value="local" ${session.mode !== "hybrid" ? "selected" : ""}>Local Only</option>
+            <option value="hybrid" ${session.mode === "hybrid" ? "selected" : ""}>Hybrid</option>
+          </select>
+        </label>
+      </div>
+      <div class="research-plan-details">
+        <strong>Plan</strong>
+        <ol>${plan.map((step) => `<li>${escapeHtml(step)}</li>`).join("") || "<li>No plan steps were generated.</li>"}</ol>
+      </div>
+      <div class="research-plan-actions">
+        <button class="ghost-button" data-research-action="edit">Save edits</button>
+        <button class="danger-button" data-research-action="deny">Deny</button>
+        <button class="primary-button" data-research-action="confirm">Confirm and run</button>
+      </div>
+    </section>`;
+  root.querySelectorAll("[data-research-action]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      handleResearchPlanAction(message, button.dataset.researchAction);
+    });
+  });
+}
+
+function researchPlanInputs(message) {
+  const node = chatLog.querySelector(`[data-message-id="${message.id}"]`);
+  const card = node?.querySelector(".research-plan-card");
+  return {
+    node,
+    card,
+    goal: card?.querySelector(".research-plan-goal")?.value.trim() || "",
+    depth: Math.max(1, Math.min(4, Number(card?.querySelector(".research-plan-depth")?.value || 3))),
+    mode: ["local", "hybrid"].includes(card?.querySelector(".research-plan-mode")?.value) ? card.querySelector(".research-plan-mode").value : "local"
+  };
+}
+
+async function handleResearchPlanAction(message, action) {
+  const sessionId = message.researchPlan?.session?.id;
+  if (!sessionId || state.busy) return;
+  if (action === "edit") return updateResearchPlan(message, sessionId);
+  if (action === "deny") return denyResearchPlan(message, sessionId);
+  if (action === "confirm") return confirmResearchPlan(message, sessionId);
+}
+
+async function updateResearchPlan(message, sessionId) {
+  const inputs = researchPlanInputs(message);
+  if (!inputs.goal) return setRequestStats("research plan needs a goal", { bad: true });
+  setRequestStats("updating research plan");
+  try {
+    const data = await researchApi(`/api/research/${encodeURIComponent(sessionId)}/update`, {
+      goal: inputs.goal,
+      mode: inputs.mode,
+      depth: inputs.depth
+    });
+    patchActiveMessageVariant(message, {
+      content: "Review this Research Lab plan before running it.",
+      thinking: (data.session?.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
+      researchPlan: { status: "planned", session: data.session },
+      toolCalls: [{ tool_name: "research.update", ok: true, summary: `${data.session?.plan?.length || 0} plan steps`, data: data.session || {} }]
+    });
+    renderChat();
+    setRequestStats("research plan updated");
+  } catch (error) {
+    setRequestStats(`research update failed: ${error.message}`, { bad: true });
+  }
+}
+
+async function denyResearchPlan(message, sessionId) {
+  try {
+    await researchApi("/api/research/delete", { id: sessionId });
+  } catch {
+    // If deletion fails, still mark this local plan as denied so the chat does not look runnable.
+  }
+  patchActiveMessageVariant(message, {
+    content: "Research plan denied. No tools were run.",
+    thinking: "",
+    researchPlan: { status: "denied", session: message.researchPlan?.session || {} },
+    toolCalls: [{ tool_name: "research.deny", ok: true, summary: "Research plan denied before execution.", data: { id: sessionId } }]
+  });
+  renderChat();
+  setRequestStats("research denied");
+}
+
+async function confirmResearchPlan(message, sessionId) {
+  state.busy = true;
+  const started = performance.now();
+  setRequestStats("research running");
+  try {
+    patchActiveMessageVariant(message, {
+      content: "Research confirmed. Gathering sources...",
+      researchPlan: { status: "running", session: message.researchPlan?.session || {} }
+    });
+    renderChat();
+    const data = await researchApi(`/api/research/${encodeURIComponent(sessionId)}/run`, {});
+    const session = data.session || {};
+    patchActiveMessageVariant(message, {
+      content: session.report || "Research completed without a report.",
+      thinking: (session.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
+      researchPlan: { status: "complete", session },
+      toolCalls: [
+        { tool_name: "research.start", ok: true, summary: `${(message.researchPlan?.session?.plan || []).length} plan steps`, data: message.researchPlan?.session || {} },
+        { tool_name: "research.run", ok: true, summary: `${(session.sources || []).length} sources · ${(session.claims || []).length} claims`, data: session }
+      ],
+      ok: true,
+      latencyMs: Math.round(performance.now() - started),
+      modelRoute: { category: "research lab", reason: "confirmed plan mode" }
+    });
+  } catch (error) {
+    patchActiveMessageVariant(message, { ok: false, content: `Research failed: ${error.message}`, researchPlan: { status: "failed", session: message.researchPlan?.session || {} } });
+  } finally {
+    state.busy = false;
+    persist();
+    renderChat();
+    setRequestStats(`${message.latencyMs || Math.round(performance.now() - started)} ms · research lab`);
+    await loadJournal();
+  }
 }
 
 function renderMessageActions(node, message) {
@@ -3478,6 +3624,7 @@ function syncSettingsModal() {
   $("settingsModelSelect").value = $("modelSelect").value || "";
   $("settingsModeSelect").value = state.settings.mode || "dev";
   $("settingsDensitySelect").value = state.settings.density || "comfortable";
+  $("settingsEnableThinkingToggle").checked = state.settings.enableThinking !== false;
   $("settingsStreamToggle").checked = Boolean(state.settings.stream);
   $("settingsConfirmToggle").checked = Boolean(state.settings.confirm);
   $("settingsMemoryToggle").checked = Boolean(state.settings.attachMemories);
@@ -3734,6 +3881,7 @@ function settingNumber(id, fallback, min = -Infinity, max = Infinity) {
 function readBehaviorSettingsFromModal() {
   state.settings.mode = $("settingsModeSelect")?.value || state.settings.mode || "dev";
   state.settings.density = $("settingsDensitySelect")?.value || state.settings.density || "comfortable";
+  state.settings.enableThinking = $("settingsEnableThinkingToggle")?.checked ?? state.settings.enableThinking;
 
   state.settings.stream = $("settingsStreamToggle")?.checked ?? state.settings.stream;
   state.settings.confirm = $("settingsConfirmToggle")?.checked ?? state.settings.confirm;
@@ -4371,7 +4519,18 @@ function bindEvents() {
   $("runAutonomousBtn")?.addEventListener("click", runAutonomous);
   $("composerFileBtn")?.addEventListener("click", () => $("composerFileInput")?.click());
   $("composerFileInput")?.addEventListener("change", insertComposerFiles);
-  $("composerMoreBtn")?.addEventListener("click", toggleComposerMoreMenu);
+  $("composerMoreBtn")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleComposerMoreMenu();
+  });
+  $("composerResearchToggleBtn")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    revealComposerResearchButton();
+  });
+  $("composerResearchRevealBtn")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleComposerResearchMenu();
+  });
   $("composerResearchBtn")?.addEventListener("click", openResearchFromComposer);
   $("composerRunTaskBtn")?.addEventListener("click", () => { toggleComposerMoreMenu(false); runAutonomous(); });
   $("composerSystemPromptBtn")?.addEventListener("click", () => { toggleComposerMoreMenu(false); const box = $("systemPromptInput"); box.hidden = !box.hidden; if (!box.hidden) box.focus(); });
@@ -4379,7 +4538,8 @@ function bindEvents() {
   $("composerSettingsBtn")?.addEventListener("click", () => { toggleComposerMoreMenu(false); openSettings(); });
   $("newSessionBtn").addEventListener("click", () => createSession(true));
   $("sidebarNewChatBtn")?.addEventListener("click", (event) => { event.stopPropagation(); createSession(true); });
-  $("sidebarCollapseBtn")?.addEventListener("click", (event) => { event.stopPropagation(); toggleSidebarCollapsed(); });
+  $("sidebarBrandBtn")?.addEventListener("click", (event) => { event.stopPropagation(); toggleSidebarCollapsed(); });
+  document.addEventListener("click", closeComposerPopoversOnOutsideClick);
   wireSidebarSearch();
   wireSidebarSessionMenu();
   $("addMemoryBtn").addEventListener("click", addMemory);
@@ -4421,11 +4581,36 @@ function toggleComposerMoreMenu(force = null) {
   const menu = $("composerMoreMenu");
   if (!menu) return;
   menu.hidden = force === null ? !menu.hidden : !force;
+  if (!menu.hidden) toggleComposerResearchMenu(false);
+}
+
+function toggleComposerResearchMenu(force = null) {
+  const menu = $("composerResearchMenu");
+  if (!menu) return;
+  menu.hidden = force === null ? !menu.hidden : !force;
+  $("composerResearchRevealBtn")?.classList.toggle("active", !menu.hidden);
+  if (!menu.hidden) toggleComposerMoreMenu(false);
+}
+
+function revealComposerResearchButton() {
+  const button = $("composerResearchRevealBtn");
+  if (!button) return;
+  button.hidden = false;
+  $("composerPanel")?.classList.add("research-revealed");
+  toggleComposerMoreMenu(false);
+  button.focus({ preventScroll: true });
+}
+
+function closeComposerPopoversOnOutsideClick(event) {
+  if (event.target.closest("#composerMoreMenu, #composerMoreBtn, #composerResearchMenu, #composerResearchToggleBtn, #composerResearchRevealBtn")) return;
+  toggleComposerMoreMenu(false);
+  toggleComposerResearchMenu(false);
 }
 
 function openResearchFromComposer() {
   const draft = $("promptInput")?.value.trim();
   toggleComposerMoreMenu(false);
+  toggleComposerResearchMenu(false);
   runComposerResearch(draft);
 }
 
@@ -4466,32 +4651,20 @@ async function runComposerResearch(goalText = "") {
   const started = performance.now();
   setRequestStats(`research lab · ${mode} · depth ${depth}`);
   $("sendBtn").textContent = "X";
-  $("sendBtn").title = "Research running";
+  $("sendBtn").title = "Research planning";
   try {
     const startedSession = await researchApi("/api/research/start", { goal: text, mode, depth });
     patchActiveMessageVariant(assistantMessage, {
-      content: "Research plan created. Gathering sources...",
+      content: "Review this Research Lab plan before running it.",
       thinking: (startedSession.session?.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
       toolCalls: [{ tool_name: "research.start", ok: true, summary: `${startedSession.session?.plan?.length || 0} plan steps`, data: startedSession.session || {} }],
       ok: true,
-      model: "research lab"
+      model: "research lab",
+      researchPlan: { status: "planned", session: startedSession.session || {} }
     });
     renderMessageContent(contentNode, assistantMessage);
     renderActivityBox(assistantNode, assistantMessage);
     renderMessageActions(assistantNode, assistantMessage);
-
-    const data = await researchApi(`/api/research/${encodeURIComponent(startedSession.session.id)}/run`, {});
-    const session = data.session || {};
-    patchActiveMessageVariant(assistantMessage, {
-      content: session.report || "Research completed without a report.",
-      thinking: (session.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
-      toolCalls: [
-        { tool_name: "research.start", ok: true, summary: `${startedSession.session?.plan?.length || 0} plan steps`, data: startedSession.session || {} },
-        { tool_name: "research.run", ok: true, summary: `${(session.sources || []).length} sources · ${(session.claims || []).length} claims`, data: session }
-      ],
-      ok: true,
-      modelRoute: { category: "research lab", reason: "chat composer more menu" }
-    });
     assistantNode.classList.toggle("failed", false);
   } catch (error) {
     patchActiveMessageVariant(assistantMessage, { ok: false, content: `Research failed: ${error.message}` });
@@ -4505,7 +4678,7 @@ async function runComposerResearch(goalText = "") {
     state.busy = false;
     $("sendBtn").textContent = ">";
     $("sendBtn").title = "Send";
-    setRequestStats(`${assistantMessage.latencyMs} ms · research lab`);
+    setRequestStats(assistantMessage.researchPlan?.status === "planned" ? "research plan ready" : `${assistantMessage.latencyMs} ms · research lab`);
     await loadJournal();
     scrollChat();
   }
@@ -4549,7 +4722,7 @@ async function boot() {
 boot();
 
 
-/* ===== Research Lab sidecar ===== */
+/* ===== Research Lab workflow ===== */
 
 async function researchApi(path, payload = null) {
   const options = payload

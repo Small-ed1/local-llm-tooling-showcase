@@ -17,7 +17,7 @@ def test_ollama_payload_stabilization_clamps_runtime_options():
         }
     )
 
-    assert payload["think"] is False
+    assert payload["think"] is True
     assert payload["format"] == "json"
     assert payload["options"]["temperature"] == 0.9
     assert payload["options"]["num_ctx"] == 4096
@@ -36,3 +36,12 @@ def test_ollama_payload_stabilization_preserves_explicit_thinking():
 
     assert payload["think"] is True
     assert payload["options"]["num_predict"] == 128
+
+
+def test_ollama_payload_stabilization_removes_option_think_alias():
+    client = OllamaClient(OllamaConfig())
+
+    payload = client._stabilize_payload({"think": False, "options": {"think": True}})
+
+    assert payload["think"] is True
+    assert "think" not in payload["options"]

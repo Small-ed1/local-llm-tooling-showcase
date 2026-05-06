@@ -39,6 +39,7 @@ class ResearchSession:
     findings: list[str] = field(default_factory=list)
     report: str = ""
     errors: list[str] = field(default_factory=list)
+    model_calls: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -65,4 +66,5 @@ class ResearchSession:
             findings=list(payload.get("findings") or []),
             report=str(payload.get("report") or ""),
             errors=list(payload.get("errors") or []),
+            model_calls=list(payload.get("model_calls") or []),
         )

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import uuid
 
 from tooling_showcase.research.planner import ResearchPlanner
+from tooling_showcase.research.modeler import ResearchModeler
 from tooling_showcase.research.runner import ResearchRunner
 from tooling_showcase.research.schemas import ResearchSession, utc_now
 from tooling_showcase.research.source_manager import ResearchSourceManager
@@ -11,13 +12,14 @@ from tooling_showcase.research.storage import ResearchStorage
 
 
 class ResearchLab:
-    """Sidecar research module that borrows the app's existing tools."""
+    """Research workflow that borrows the app's existing tools."""
 
     def __init__(self, service) -> None:
         self.service = service
         self.storage = ResearchStorage(service.config.project_root / "state" / "research")
         self.planner = ResearchPlanner()
-        self.runner = ResearchRunner(self.storage, self.planner, ResearchSourceManager(service.tools))
+        self.modeler = ResearchModeler(service.ollama)
+        self.runner = ResearchRunner(self.storage, self.planner, ResearchSourceManager(service.tools), self.modeler)
 
     def list_sessions(self) -> list[dict]:
         return self.storage.list_sessions()
@@ -39,11 +41,43 @@ class ResearchLab:
             depth=clean_depth,
             status="planned",
         )
-        session.plan = self.planner.plan(clean_goal, mode=session.mode, depth=session.depth)
+        session.plan, trace = self.modeler.plan(
+            clean_goal,
+            mode=session.mode,
+            depth=session.depth,
+            fallback=self.planner.plan(clean_goal, mode=session.mode, depth=session.depth),
+        )
+        session.model_calls.append(trace)
         return self.storage.save(session)
 
     def run(self, session_id: str) -> dict:
         return self.runner.run(session_id)
+
+    def update(self, session_id: str, *, goal: str, mode: str = "local", depth: int = 2) -> dict:
+        session = self.storage.get(session_id)
+        if not session:
+            raise FileNotFoundError(f"Research session not found: {session_id}")
+        clean_goal = " ".join(str(goal or "").split())
+        if not clean_goal:
+            raise ValueError("Research goal is required.")
+        session.goal = clean_goal
+        session.mode = mode if mode in {"local", "hybrid"} else "local"
+        session.depth = max(1, min(int(depth or 2), 4))
+        session.status = "planned"
+        session.plan, trace = self.modeler.plan(
+            session.goal,
+            mode=session.mode,
+            depth=session.depth,
+            fallback=self.planner.plan(session.goal, mode=session.mode, depth=session.depth),
+        )
+        session.sources = []
+        session.claims = []
+        session.findings = []
+        session.report = ""
+        session.errors = []
+        session.model_calls.append(trace)
+        session.updated_at = utc_now()
+        return self.storage.save(session)
 
     def stop(self, session_id: str) -> dict:
         session = self.storage.get(session_id)

@@ -26,6 +26,9 @@ class ResearchPlanner:
             ("tree_view", {"path": ".", "max_depth": 3}, "Workspace tree"),
             ("read_file", {"path_text": "README.md"}, "README"),
             ("read_file", {"path_text": "pyproject.toml"}, "Project metadata"),
+            ("read_file", {"path_text": "src/tooling_showcase/research/lab.py"}, "Research Lab entrypoint"),
+            ("read_file", {"path_text": "src/tooling_showcase/research/runner.py"}, "Research runner"),
+            ("read_file", {"path_text": "src/tooling_showcase/research/modeler.py"}, "Research model calls"),
             ("content_search", {"query": "TOOL_SCHEMAS"}, "Tool protocol search"),
             ("content_search", {"query": "def run_server"}, "Server route search"),
         ]
@@ -46,11 +49,12 @@ class ResearchPlanner:
         stop = {
             "the", "and", "for", "with", "this", "that", "from", "into", "your",
             "project", "local", "llm", "tooling", "showcase", "please", "create",
+            "evaluate", "how", "uses", "using", "including", "workflow", "integrated",
         }
         words = [w.lower() for w in re.findall(r"[a-zA-Z_][a-zA-Z0-9_'-]{2,}", text)]
         seen = []
         for word in words:
             if word not in stop and word not in seen:
                 seen.append(word)
-        defaults = ["research", "router", "tool", "index", "journal", "server"]
+        defaults = ["ResearchLab", "ShowcaseService", "ToolRuntime", "researchPlan", "model_calls", "state/research", "router", "server"]
         return (seen + [item for item in defaults if item not in seen])[:8]

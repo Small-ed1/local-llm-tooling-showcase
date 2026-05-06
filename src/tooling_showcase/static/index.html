@@ -17,12 +17,11 @@
 
       <section class="chatgpt-sidebar glass" id="sidebarShell">
         <div class="sidebar-brand-row">
-          <div class="brand-mark" aria-hidden="true">LLM</div>
+          <button id="sidebarBrandBtn" class="brand-mark" type="button" title="Toggle sidebar" aria-label="Toggle sidebar">LLM</button>
           <div class="brand-copy">
             <h1>Local LLM</h1>
             <p>Tooling Showcase</p>
           </div>
-          <button id="sidebarCollapseBtn" class="ghost-button icon-button sidebar-collapse-button" title="Collapse sidebar" aria-label="Collapse sidebar">=</button>
         </div>
 
         <div class="sidebar-primary-actions">
@@ -113,6 +112,7 @@
               <textarea id="promptInput" class="prompt-input" rows="3" placeholder="Ask the local runtime something... Shift+Enter for newline, Enter to send."></textarea>
               <div class="composer-left-actions" aria-label="Composer utilities">
                 <button id="composerMoreBtn" class="circle-button more-button" title="More options" aria-label="More options">...</button>
+                <button id="composerResearchRevealBtn" class="circle-button research-button" title="Deep research options" aria-label="Deep research options" hidden>R</button>
               </div>
               <div class="composer-inline-actions" aria-label="Composer actions">
                 <button id="sendBtn" class="circle-button send-button" title="Send" aria-label="Send">&gt;</button>
@@ -121,26 +121,27 @@
             <input id="composerFileInput" type="file" accept=".txt,.md,.json,.yaml,.yml,.py,.js,.ts,.tsx,.html,.css,.sh,text/*,application/json" multiple hidden />
             <div id="composerMoreMenu" class="composer-more-menu" hidden>
               <button id="composerFileBtn" class="ghost-button">Add file text</button>
-              <details class="composer-research-box">
-                <summary>Research Lab</summary>
-                <label class="field-label" for="composerResearchDepthSelect">Research type
-                  <select id="composerResearchDepthSelect" class="input">
-                    <option value="1">Light Research</option>
-                    <option value="3" selected>Deep Research</option>
-                  </select>
-                </label>
-                <label class="field-label" for="composerResearchModeSelect">Source mode
-                  <select id="composerResearchModeSelect" class="input">
-                    <option value="local">Local Only</option>
-                    <option value="hybrid">Hybrid</option>
-                  </select>
-                </label>
-                <button id="composerResearchBtn" class="primary-button" type="button">Run research report</button>
-              </details>
+              <button id="composerResearchToggleBtn" class="ghost-button" type="button">Deep research</button>
               <button id="composerRunTaskBtn" class="ghost-button">Run task</button>
               <button id="composerSystemPromptBtn" class="ghost-button">System prompt</button>
               <button id="composerClearBtn" class="ghost-button">Clear chat</button>
               <button id="composerSettingsBtn" class="ghost-button">Settings</button>
+            </div>
+            <div id="composerResearchMenu" class="composer-research-menu" hidden>
+              <strong>Deep research</strong>
+              <label class="field-label" for="composerResearchDepthSelect">Research type
+                <select id="composerResearchDepthSelect" class="input">
+                  <option value="1">Light Research</option>
+                  <option value="3" selected>Deep Research</option>
+                </select>
+              </label>
+              <label class="field-label" for="composerResearchModeSelect">Source mode
+                <select id="composerResearchModeSelect" class="input">
+                  <option value="local">Local Only</option>
+                  <option value="hybrid">Hybrid</option>
+                </select>
+              </label>
+              <button id="composerResearchBtn" class="primary-button" type="button">Run research report</button>
             </div>
             <div class="composer-meta-row"><span id="requestStats" class="request-stats">idle</span></div>
             <textarea id="systemPromptInput" class="system-prompt" rows="4" placeholder="Optional system prompt override..." hidden></textarea>
@@ -345,6 +346,11 @@
       </div>
 
       <div class="settings-tab-panel" data-settings-panel="model">
+        <section class="settings-section wide advanced-settings">
+          <h3>Thinking</h3>
+          <label class="setting-line"><span>Enable thinking for supported models</span><input id="settingsEnableThinkingToggle" type="checkbox" /></label>
+          <p class="field-help">Sends <code>enable_thinking</code> to compatible Qwen models such as <code>qwen2.5</code>, <code>qwen3</code>, and <code>qwen3.5</code>.</p>
+        </section>
         <section class="settings-section wide advanced-settings">
           <h3>Ollama Options</h3>
           <p class="field-help">These map to Ollama request options. Leave unsupported values at defaults if your local endpoint ignores them.</p>

@@ -17,6 +17,10 @@ class ResearchReportWriter:
         claim_lines = [f"- {claim}" for claim in session.claims] or ["- No source-backed claims extracted yet."]
         plan_lines = [f"- {step}" for step in session.plan]
         verification_lines = [f"- {note}" for note in (verification_notes or [])] or ["- No verification warnings."]
+        model_lines = [
+            f"- {call.get('stage', 'model')} / {call.get('model', '') or 'unknown model'} / {'ok' if call.get('ok') else 'fallback'}: {call.get('summary', '')}"
+            for call in session.model_calls
+        ] or ["- No model calls recorded."]
 
         return f"""# Research Lab Report
 
@@ -52,11 +56,15 @@ class ResearchReportWriter:
 
 {chr(10).join(verification_lines)}
 
+## Model Calls
+
+{chr(10).join(model_lines)}
+
 ## Limitations
 
-- Research Lab is a sidecar module. It does not replace chat, routing, model selection, or normal tool-loop behavior.
+- Research Lab is a separate workflow. It does not replace chat, routing, model selection, or normal tool-loop behavior.
 - Findings are generated from safe tool outputs and simple extraction rules.
-- Contradiction checks and model-assisted synthesis are intentionally left as future extensions.
+- Model calls are best-effort and fall back to deterministic extraction/report writing when Ollama is disabled or unavailable.
 
 ## Next Steps
 
