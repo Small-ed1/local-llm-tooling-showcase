@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from tooling_showcase.config import load_config
 from tooling_showcase.config import OllamaConfig
 from tooling_showcase.models import ActionResult
