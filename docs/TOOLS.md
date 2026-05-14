@@ -41,7 +41,8 @@ Everything else in `ToolRuntime.available_tools()` is available for manual/runti
 ## Safety Rules
 
 - Shell execution parses common command shapes, blocks known destructive command/argument patterns, requires confirmation for risky commands, and keeps raw-pattern checks as a fallback guardrail.
-- File write/delete/git mutation tools are intentionally not planner-visible by default.
+- File write/delete/git mutation tools are intentionally not planner-visible by default, and manual mutation tools are blocked until `confirm=true`.
+- Planner-visible URL expansion rejects localhost, private/RFC1918, link-local, metadata, and other non-global IP targets unless the same tool is explicitly confirmed from the manual path.
 - `local_doc_search` and `local_doc_read` are planner-visible read-only documentation helpers; `local_doc_replace` is manual and confirmation-gated.
 - Memory tools should only store explicit, stable user preferences or facts. Do not store secrets.
 

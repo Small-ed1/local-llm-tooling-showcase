@@ -1,24 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-import json
 from typing import Any, Iterator
 
-from tooling_showcase.model_routing import route_model
 from tooling_showcase.models import ActionResult, ToolCall
 from tooling_showcase.service_prompts import (
-    conversation_history_text,
-    has_contextual_reference,
-    normalize_chat_messages,
     replace_last_user_message,
     split_thinking_text,
 )
-from tooling_showcase.tool_protocol import (
-    TOOL_SCHEMAS,
-    compact_tool_result,
-    normalize_tool_arguments,
-    parse_model_json,
-)
+from tooling_showcase.tool_protocol import compact_tool_result
 
 
 class StreamingResponseMixin:
@@ -44,35 +34,28 @@ class StreamingResponseMixin:
             yield self._stream_final(ActionResult(False, "Empty message."))
             return
 
-        chat_messages = normalize_chat_messages(messages, text)
-        tool_signal_text = f"{conversation_history_text(chat_messages)}\n\nCurrent user message: {text}" if has_contextual_reference(text) else text
-
-        model_route = route_model(text)
-        model_route_data = model_route.as_dict()
-        requested_model = self._normalize_model_choice(model)
-        if requested_model is None:
-            model_route_data = self._route_with_benchmark_profile(model_route_data)
-        selected_model = requested_model or str(model_route_data.get("model") or model_route.profile.model)
-        selected_options = self._merge_options(options or ollama_options)
-        enable_thinking, selected_options = self._extract_think(selected_options)
-        enable_thinking = enable_thinking and self._supports_thinking(selected_model)
-        available_tools = self.tools.available_tools()
-        planner_tools = [name for name in available_tools if name in TOOL_SCHEMAS]
+        context = self._prepare_request_context(
+            text,
+            model=model,
+            options=options,
+            ollama_options=ollama_options,
+            messages=messages,
+        )
         tool_calls: list[ToolCall] = []
         tool_context: list[str] = []
 
         if allow_tools:
             direct = self.router.route(text)
-            if direct.route == "tool" and direct.action in available_tools:
+            if direct.route == "tool" and direct.action in context.available_tools:
                 if direct.action != "shell_command" or str((direct.arguments or {}).get("command", "")).strip().lower() not in {"command", "a command", "shell command", "a shell command"}:
                     yield from self._stream_tool_execution(direct.action, direct.arguments or {}, confirm=confirm, tool_timeout_seconds=tool_timeout_seconds, tool_calls=tool_calls, tool_context=tool_context)
                     result = ActionResult(
                         ok=tool_calls[-1].ok,
                         message=tool_calls[-1].summary,
-                        data={"model": selected_model, "model_route": model_route_data, "router": {"route": direct.route, "reason": direct.reason, "action": direct.action}},
+                        data={"model": context.selected_model, "model_route": context.model_route_data, "router": {"route": direct.route, "reason": direct.reason, "action": direct.action}},
                         tool_calls=tool_calls,
                     )
-                    self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=tool_calls, mode="deterministic_tool_route")
+                    self._log_chat(text=text, result=result, model=context.selected_model, model_route=context.model_route_data, tool_calls=tool_calls, mode="deterministic_tool_route")
                     yield self._stream_final(result)
                     return
 
@@ -81,10 +64,10 @@ class StreamingResponseMixin:
             if legacy is not None:
                 for call in legacy.tool_calls:
                     yield {"type": "tool_result", "tool_call": asdict(call), "tool_calls": [asdict(item) for item in legacy.tool_calls]}
-                self._log_chat(text=text, result=legacy, model=selected_model, model_route=model_route_data, tool_calls=legacy.tool_calls, mode="legacy_direct_tool_fallback_no_ollama")
+                self._log_chat(text=text, result=legacy, model=context.selected_model, model_route=context.model_route_data, tool_calls=legacy.tool_calls, mode="legacy_direct_tool_fallback_no_ollama")
                 yield self._stream_final(legacy)
                 return
-            result = ActionResult(False, "Local Ollama fallback is disabled.", data={"model": selected_model, "model_route": model_route_data})
+            result = ActionResult(False, "Local Ollama fallback is disabled.", data={"model": context.selected_model, "model_route": context.model_route_data})
             self.journal.append({"route": "llm_fallback", "request": text, "ok": result.ok, "message": result.message})
             yield self._stream_final(result)
             return
@@ -92,16 +75,16 @@ class StreamingResponseMixin:
         if not allow_tools:
             result = yield from self._stream_answer_direct(
                 text,
-                model=selected_model,
+                model=context.selected_model,
                 system_prompt=system_prompt,
-                options=selected_options,
+                options=context.selected_options,
                 response_format=response_format,
-                model_route=model_route_data,
-                think=enable_thinking,
+                model_route=context.model_route_data,
+                think=context.enable_thinking,
                 ollama_timeout_seconds=ollama_timeout_seconds,
-                messages=chat_messages,
+                messages=context.chat_messages,
             )
-            self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=[], mode="chat_no_tools")
+            self._log_chat(text=text, result=result, model=context.selected_model, model_route=context.model_route_data, tool_calls=[], mode="chat_no_tools")
             return
 
         contextual_calls = self.tools.maybe_contextual_tool_calls(text)
@@ -112,132 +95,101 @@ class StreamingResponseMixin:
             result = yield from self._stream_answer_with_context(
                 user_text=text,
                 tool_context=tool_context,
-                model=selected_model,
+                model=context.selected_model,
                 system_prompt=system_prompt,
-                options=selected_options,
+                options=context.selected_options,
                 response_format=response_format,
-                model_route=model_route_data,
+                model_route=context.model_route_data,
                 show_tool_traces=show_tool_traces,
-                think=enable_thinking,
+                think=context.enable_thinking,
                 ollama_timeout_seconds=ollama_timeout_seconds,
                 existing_tool_calls=tool_calls,
-                messages=chat_messages,
+                messages=context.chat_messages,
             )
-            self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=tool_calls, mode="contextual_web_answer")
+            self._log_chat(text=text, result=result, model=context.selected_model, model_route=context.model_route_data, tool_calls=tool_calls, mode="contextual_web_answer")
             return
 
-        if not self._likely_needs_tools(tool_signal_text):
+        if not self._likely_needs_tools(context.tool_signal_text):
             result = yield from self._stream_answer_direct(
                 text,
-                model=selected_model,
+                model=context.selected_model,
                 system_prompt=system_prompt,
-                options=selected_options,
+                options=context.selected_options,
                 response_format=response_format,
-                model_route=model_route_data,
-                think=enable_thinking,
+                model_route=context.model_route_data,
+                think=context.enable_thinking,
                 ollama_timeout_seconds=ollama_timeout_seconds,
-                messages=chat_messages,
+                messages=context.chat_messages,
             )
-            self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=[], mode="chat_direct_no_tool_signals")
+            self._log_chat(text=text, result=result, model=context.selected_model, model_route=context.model_route_data, tool_calls=[], mode="chat_direct_no_tool_signals")
             return
 
-        executed_signatures: set[tuple[str, str]] = set()
-        for step_index in range(max_tool_calls):
-            decision_result = self._ask_ollama(
-                self._build_tool_decision_prompt(user_text=text, available_tools=planner_tools, previous_tool_context=tool_context, step_index=step_index, max_tool_calls=max_tool_calls, messages=chat_messages),
-                model=selected_model,
-                system_prompt=self._tool_decision_system_prompt(system_prompt),
-                response_format="json",
-                options=selected_options,
-                think=False,
-                stream=False,
-                timeout_seconds=ollama_timeout_seconds,
-            )
-            if not decision_result.ok:
-                result = ActionResult(False, f"Tool decision model call failed: {decision_result.message}", data={"model": selected_model, "model_route": model_route_data}, tool_calls=tool_calls)
-                self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=tool_calls, mode="tool_decision_failed")
-                yield self._stream_final(result)
-                return
-            try:
-                decision = parse_model_json(decision_result.message)
-            except Exception as exc:
-                result = yield from self._stream_answer_with_context(
-                    user_text=text,
-                    tool_context=tool_context,
-                    model=selected_model,
-                    system_prompt=system_prompt,
-                    options=selected_options,
-                    response_format=response_format,
-                    model_route=model_route_data,
-                    show_tool_traces=show_tool_traces,
-                    think=enable_thinking,
-                    recovery_note=f"The tool planner returned invalid JSON: {exc}",
-                    ollama_timeout_seconds=ollama_timeout_seconds,
-                    existing_tool_calls=tool_calls,
-                    messages=chat_messages,
-                )
-                self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=tool_calls, mode="invalid_tool_json_recovered")
-                return
-
-            action = str(decision.get("action") or decision.get("type") or "").strip().lower()
-            if action == "answer":
-                answer_text = str(decision.get("answer") or decision.get("message") or "").strip()
-                if decision.get("message") and "<END_OF_MESSAGE>" not in answer_text:
-                    continue
-                if answer_text and self._requires_tree_context(text) and not any(call.tool_name == "tree_view" for call in tool_calls):
-                    yield from self._stream_tool_execution("tree_view", {"path": ".", "max_depth": 4}, confirm=confirm, tool_timeout_seconds=tool_timeout_seconds, tool_calls=tool_calls, tool_context=tool_context)
-                    continue
-                if answer_text and not enable_thinking and response_format is None:
-                    answer_text = self._strip_loop_end_marker(answer_text)
-                    yield {"type": "content_delta", "delta": answer_text}
-                    result = ActionResult(True, answer_text, data={"model": selected_model, "model_route": model_route_data, "planner": decision}, tool_calls=tool_calls)
-                    self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=tool_calls, mode="model_answered_without_more_tools")
-                    yield self._stream_final(result)
-                    return
-                break
-
-            if action != "tool_call":
-                tool_context.append("Planner returned an unknown action. Valid actions are answer or tool_call.")
-                continue
-            tool_name = str(decision.get("tool_name", "")).strip()
-            arguments = decision.get("arguments") or {}
-            if not isinstance(arguments, dict):
-                arguments = {}
-            normalized_args = normalize_tool_arguments(tool_name, arguments)
-            signature = (tool_name, json.dumps(normalized_args, sort_keys=True, default=str))
-            if signature in executed_signatures:
-                tool_context.append(f"Skipped duplicate tool call: {tool_name} {json.dumps(normalized_args, sort_keys=True, default=str)}")
-                continue
-            if tool_name not in planner_tools:
-                bad_call = ToolCall(tool_name=tool_name or "unknown", ok=False, summary=f"Rejected model-requested tool. Tool is not available to the chat planner. Available planner tools: {', '.join(planner_tools)}", data={"requested_tool": tool_name, "available_tools": planner_tools})
-                tool_calls.append(bad_call)
-                tool_context.append(compact_tool_result(bad_call))
-                yield {"type": "tool_result", "tool_call": asdict(bad_call), "tool_calls": [asdict(call) for call in tool_calls]}
-                continue
-            if not self._safe_auto_run(tool_name) and not confirm:
-                blocked = ToolCall(tool_name=tool_name, ok=False, summary="Tool requires confirmation before running. Ask the user for confirmation or rerun with confirm=true.", data={"arguments": arguments, "requires_confirmation": True})
-                tool_calls.append(blocked)
-                tool_context.append(compact_tool_result(blocked))
-                yield {"type": "tool_result", "tool_call": asdict(blocked), "tool_calls": [asdict(call) for call in tool_calls]}
-                break
-            yield from self._stream_tool_execution(tool_name, normalized_args, confirm=confirm, tool_timeout_seconds=tool_timeout_seconds, tool_calls=tool_calls, tool_context=tool_context)
-            executed_signatures.add(signature)
-
-        result = yield from self._stream_answer_with_context(
-            user_text=text,
-            tool_context=tool_context,
-            model=selected_model,
+        yield from self._stream_tool_loop_events(
+            text=text,
+            confirm=confirm,
+            selected_model=context.selected_model,
             system_prompt=system_prompt,
-            options=selected_options,
+            selected_options=context.selected_options,
             response_format=response_format,
-            model_route=model_route_data,
+            model_route_data=context.model_route_data,
             show_tool_traces=show_tool_traces,
-            think=enable_thinking,
+            enable_thinking=context.enable_thinking,
             ollama_timeout_seconds=ollama_timeout_seconds,
-            existing_tool_calls=tool_calls,
-            messages=chat_messages,
+            tool_timeout_seconds=tool_timeout_seconds,
+            chat_messages=context.chat_messages,
+            planner_tools=context.planner_tools,
+            max_tool_calls=max_tool_calls,
         )
-        self._log_chat(text=text, result=result, model=selected_model, model_route=model_route_data, tool_calls=tool_calls, mode="model_tool_loop")
+
+    def _stream_tool_loop_events(
+        self,
+        *,
+        text: str,
+        confirm: bool,
+        selected_model: str,
+        system_prompt: str | None,
+        selected_options: dict[str, Any],
+        response_format: str | dict | None,
+        model_route_data: dict[str, Any],
+        show_tool_traces: bool,
+        enable_thinking: bool,
+        ollama_timeout_seconds: int | None,
+        tool_timeout_seconds: int | None,
+        chat_messages: list[dict[str, str]],
+        planner_tools: list[str],
+        max_tool_calls: int,
+    ) -> Iterator[dict]:
+        for event in self._iter_tool_loop_events(
+            text=text,
+            confirm=confirm,
+            selected_model=selected_model,
+            system_prompt=system_prompt,
+            selected_options=selected_options,
+            response_format=response_format,
+            model_route_data=model_route_data,
+            show_tool_traces=show_tool_traces,
+            enable_thinking=enable_thinking,
+            ollama_timeout_seconds=ollama_timeout_seconds,
+            tool_timeout_seconds=tool_timeout_seconds,
+            chat_messages=chat_messages,
+            planner_tools=planner_tools,
+            max_tool_calls=max_tool_calls,
+            emit_content_delta=True,
+        ):
+            event_type = event.get("type")
+            if event_type == "tool_start":
+                yield event
+            elif event_type == "tool_result":
+                tool_calls = event.get("tool_calls") or []
+                yield {
+                    "type": "tool_result",
+                    "tool_call": asdict(event["tool_call"]),
+                    "tool_calls": [asdict(call) for call in tool_calls],
+                }
+            elif event_type == "content_delta":
+                yield event
+            elif event_type == "final_result":
+                yield self._stream_final(event["result"])
 
     def _stream_answer_direct(
         self,

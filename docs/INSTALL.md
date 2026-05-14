@@ -32,7 +32,7 @@ node --check src/tooling_showcase/static/markdown.js
 node --check src/tooling_showcase/static/app.js
 ```
 
-`pytest tests/test_browser_smoke.py` runs an optional Playwright boot check for the DOM app and skips when Playwright Chromium is not installed.
+`pytest tests/test_browser_smoke.py` runs a Playwright boot check for the DOM app. CI installs Chromium and treats it as required; local runs skip when Playwright Chromium is not installed.
 
 Manual Windows setup:
 

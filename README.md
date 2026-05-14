@@ -210,7 +210,7 @@ The test suite covers:
 - adapters, retrieval/indexing, research-lab sessions, journal behavior, and service fallback paths
 - Ollama-compatible wrapper request shapes
 - static server and UI marker behavior
-- optional Playwright browser boot smoke for the DOM app
+- required CI Playwright browser boot smoke for the DOM app, with local skip behavior when Chromium is not installed
 
 Run all tests with:
 
@@ -226,7 +226,7 @@ node --check src/tooling_showcase/static/markdown.js
 node --check src/tooling_showcase/static/app.js
 ```
 
-The browser smoke test is `pytest tests/test_browser_smoke.py`. It skips when Playwright or its Chromium browser is not installed.
+The browser smoke test is `pytest tests/test_browser_smoke.py`. CI installs Playwright Chromium and runs it as a required browser job; local runs skip when Playwright or its Chromium browser is not installed.
 
 ## Project Layout
 

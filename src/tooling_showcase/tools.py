@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from html.parser import HTMLParser
+from ipaddress import ip_address
 from pathlib import Path
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 import inspect
 import json
 import shlex
+import socket
 import subprocess
 from threading import RLock
 
@@ -22,6 +24,7 @@ from tooling_showcase.retrieval import (
     query_chunks,
     save_index,
 )
+from tooling_showcase.state_io import atomic_write_json, read_json
 
 
 TEXT_EXTENSIONS = {
@@ -54,6 +57,44 @@ DOC_ROOT_FILES = {
 WEB_FETCH_MAX_BYTES = 1_000_000
 WEB_FETCH_MAX_CHARS = 12_000
 SHELL_CONTROL_TOKENS = {";", "&&", "||", "|", "|&", "&", "(", ")"}
+METADATA_HOSTS = {"metadata", "metadata.google.internal"}
+METADATA_IPS = {"169.254.169.254", "169.254.170.2", "100.100.100.200"}
+MANUAL_CONFIRMATION_TOOLS = {
+    "append_file",
+    "apply_patch",
+    "copy_file",
+    "create_file",
+    "delete_file",
+    "delete_from_index",
+    "download_file",
+    "git_add",
+    "git_checkout",
+    "git_commit",
+    "git_merge",
+    "git_reset",
+    "git_stash",
+    "install_dependencies",
+    "kill_process",
+    "local_doc_replace",
+    "move_file",
+    "write_file",
+}
+
+
+class BlockedURL(ValueError):
+    pass
+
+
+class _GuardedRedirectHandler(HTTPRedirectHandler):
+    def __init__(self, validator) -> None:
+        self._validator = validator
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401
+        target = urljoin(req.full_url, newurl)
+        error = self._validator(target)
+        if error:
+            raise BlockedURL(f"Blocked redirect target: {error}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def _shell_policy_findings(command: str, policy: ShellPolicy) -> tuple[list[str], list[str]]:
@@ -244,6 +285,33 @@ def _dedupe(values: list[str]) -> list[str]:
     return result
 
 
+def _can_accept_arguments_dict(signature: inspect.Signature) -> bool:
+    positional = [
+        param
+        for param in signature.parameters.values()
+        if param.kind in {inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}
+    ]
+    return bool(positional) and positional[0].name in {"arguments", "args", "payload"}
+
+
+def _blocked_ip_reason(address: str) -> str | None:
+    try:
+        parsed = ip_address(address)
+    except ValueError:
+        return None
+    if str(parsed) in METADATA_IPS:
+        return f"metadata IP {parsed}"
+    if parsed.is_loopback:
+        return f"loopback IP {parsed}"
+    if parsed.is_link_local:
+        return f"link-local IP {parsed}"
+    if parsed.is_private:
+        return f"private IP {parsed}"
+    if not parsed.is_global:
+        return f"non-global IP {parsed}"
+    return None
+
+
 class _DuckDuckGoParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -347,6 +415,16 @@ class ToolRuntime:
             call = ToolCall(name, False, f"Unknown tool: {name}")
             self._record_tool_stat(name, call.ok)
             return call
+        risk = self.tool_risk(name)
+        if risk.get("requires_confirmation") and not confirm:
+            call = ToolCall(
+                name,
+                False,
+                f"Confirmation required for {risk['category']} tool: {name}",
+                {"requires_confirmation": True, "risk": risk, "arguments": arguments},
+            )
+            self._record_tool_stat(name, call.ok)
+            return call
         with self._timeout_lock:
             original_timeout = self.config.shell_policy.timeout_seconds
             if timeout_seconds is not None:
@@ -357,10 +435,7 @@ class ToolRuntime:
                     signature = inspect.signature(handler)
                     if "confirm" in signature.parameters:
                         call_arguments["confirm"] = confirm
-                try:
-                    call = handler(**call_arguments)
-                except TypeError:
-                    call = handler(arguments)
+                call = self._invoke_tool_handler(handler, call_arguments, arguments)
             except TypeError as e:
                 call = ToolCall(name, False, f"Invalid arguments: {e}")
             except Exception as e:
@@ -369,6 +444,36 @@ class ToolRuntime:
                 self.config.shell_policy.timeout_seconds = original_timeout
         self._record_tool_stat(name, bool(getattr(call, "ok", False)))
         return call
+
+    def _invoke_tool_handler(self, handler, call_arguments: dict, original_arguments: dict) -> ToolCall:
+        signature = inspect.signature(handler)
+        try:
+            bound = signature.bind(**call_arguments)
+        except TypeError as kwargs_error:
+            if not _can_accept_arguments_dict(signature):
+                raise kwargs_error
+            fallback_kwargs = {}
+            if "confirm" in signature.parameters and "confirm" in call_arguments:
+                fallback_kwargs["confirm"] = call_arguments["confirm"]
+            try:
+                bound = signature.bind(original_arguments, **fallback_kwargs)
+            except TypeError:
+                raise kwargs_error from None
+        return handler(*bound.args, **bound.kwargs)
+
+    def tool_risk(self, name: str) -> dict:
+        canonical = self.aliases.get(name, name)
+        if canonical in MANUAL_CONFIRMATION_TOOLS:
+            return {
+                "category": "mutation",
+                "requires_confirmation": True,
+                "manual_only": True,
+            }
+        return {
+            "category": "read",
+            "requires_confirmation": False,
+            "manual_only": False,
+        }
 
     def available_tools(self) -> list[str]:
         return [
@@ -440,6 +545,7 @@ class ToolRuntime:
             "log_event",
             "log_sensitive_action",
             "mark_step_complete",
+            "mark_step_failed",
             "move_file",
             "parse_json_api",
             "parse_pdf",
@@ -502,6 +608,7 @@ class ToolRuntime:
                     "safe_auto_run": bool(schema and schema.get("safe_auto_run")),
                     "summary": doc.compact if doc else "Runtime tool exposed by ToolRuntime.",
                     "aliases": sorted(alias for alias, target in self.aliases.items() if target == tool),
+                    "risk": self.tool_risk(tool),
                 }
             )
 
@@ -636,9 +743,9 @@ class ToolRuntime:
             data={"matches": len(selected)},
         )
 
-    def expand_search_result(self, url: str, query: str | None = None) -> ToolCall:
+    def expand_search_result(self, url: str, query: str | None = None, confirm: bool = False) -> ToolCall:
         url = self._normalize_search_url(url)
-        fetched = self.fetch_url(url)
+        fetched = self.fetch_url(url, confirm=confirm)
         if not fetched.ok:
             return ToolCall("expand_search_result", False, f"Failed to fetch URL: {fetched.summary}")
         text = self._extract_text_from_html(fetched.summary, query=query)
@@ -681,6 +788,32 @@ class ToolRuntime:
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             return None, "Only absolute http:// and https:// URLs are supported."
         return normalized, None
+
+    def _http_url_block_reason(self, url: str, *, confirm: bool = False) -> str | None:
+        if confirm:
+            return None
+        normalized, error = self._normalize_http_url(url)
+        if error or normalized is None:
+            return error or "Invalid URL."
+        parsed = urlparse(normalized)
+        host = (parsed.hostname or "").strip().lower().rstrip(".")
+        if not host:
+            return "URL host is missing."
+        if host == "localhost" or host.endswith(".localhost") or host in METADATA_HOSTS:
+            return f"host {host} is not allowed without confirmation."
+        literal_reason = _blocked_ip_reason(host)
+        if literal_reason:
+            return literal_reason
+        try:
+            infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
+        except socket.gaierror:
+            return None
+        for info in infos:
+            address = info[4][0]
+            reason = _blocked_ip_reason(address)
+            if reason:
+                return f"host {host} resolves to blocked {reason}"
+        return None
 
     def shell_command(self, command: str, confirm: bool = False) -> ToolCall:
         blocked, risky = _shell_policy_findings(command, self.config.shell_policy)
@@ -935,16 +1068,10 @@ class ToolRuntime:
         return docs_dir in resolved.parents and resolved.suffix.lower() in DOC_EXTENSIONS
 
     def _load_json(self, path: Path, default):
-        if not path.exists():
-            return default
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return default
+        return read_json(path, default)
 
     def _save_json(self, path: Path, payload) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8", newline="\n")
+        atomic_write_json(path, payload)
 
     def _record_tool_stat(self, name: str, ok: bool) -> None:
         stats = self._load_tool_stats()
@@ -1257,6 +1384,21 @@ class ToolRuntime:
         self._save_json(self.task_path, tasks)
         return ToolCall("mark_step_complete", True, f"Completed step {step_index}", {"task_id": task_id, "step_index": step_index})
 
+    def mark_step_failed(self, task_id: str, step_index: int, reason: str = "") -> ToolCall:
+        tasks = self._load_json(self.task_path, {})
+        task = tasks.get(task_id)
+        if not task:
+            return ToolCall("mark_step_failed", False, f"Task not found: {task_id}")
+        steps = task.get("steps", [])
+        if step_index < 0 or step_index >= len(steps):
+            return ToolCall("mark_step_failed", False, "Step index out of range.")
+        steps[step_index]["status"] = "failed"
+        steps[step_index]["error"] = str(reason or "")[:1000]
+        task["status"] = "failed"
+        task["updated_at"] = self._now()
+        self._save_json(self.task_path, tasks)
+        return ToolCall("mark_step_failed", True, f"Failed step {step_index}", {"task_id": task_id, "step_index": step_index})
+
     def retry_step(self, task_id: str, step_index: int) -> ToolCall:
         tasks = self._load_json(self.task_path, {})
         task = tasks.get(task_id)
@@ -1420,6 +1562,14 @@ class ToolRuntime:
         normalized_url, error = self._normalize_http_url(url)
         if error or normalized_url is None:
             return ToolCall("fetch_url", False, error or "Invalid URL.", {"url": url})
+        blocked = self._http_url_block_reason(normalized_url, confirm=confirm)
+        if blocked:
+            return ToolCall(
+                "fetch_url",
+                False,
+                f"Blocked URL by SSRF protection: {blocked}",
+                {"url": normalized_url, "requires_confirmation": True, "blocked_reason": blocked},
+            )
         byte_limit = max(1, min(int(max_bytes), WEB_FETCH_MAX_BYTES))
         char_limit = max(1, min(int(max_chars), 200_000))
         try:
@@ -1430,7 +1580,8 @@ class ToolRuntime:
                     "Accept": "text/html,application/json,text/plain,*/*;q=0.8",
                 },
             )
-            with urlopen(request, timeout=20) as response:
+            opener = build_opener(_GuardedRedirectHandler(lambda target: self._http_url_block_reason(target, confirm=confirm)))
+            with opener.open(request, timeout=20) as response:
                 raw = response.read(byte_limit + 1)
                 byte_truncated = len(raw) > byte_limit
                 raw = raw[:byte_limit]
@@ -1449,14 +1600,21 @@ class ToolRuntime:
                     "truncated": byte_truncated or char_truncated,
                     "text": summary,
                 }
+        except BlockedURL as exc:
+            return ToolCall(
+                "fetch_url",
+                False,
+                f"Blocked URL by SSRF protection: {exc}",
+                {"url": normalized_url, "requires_confirmation": True, "blocked_reason": str(exc)},
+            )
         except Exception as exc:
             return ToolCall("fetch_url", False, f"Fetch failed: {exc}", {"url": normalized_url})
         return ToolCall("fetch_url", True, summary, data)
 
-    def extract_webpage_content(self, url: str | None = None, query: str | None = None) -> ToolCall:
+    def extract_webpage_content(self, url: str | None = None, query: str | None = None, confirm: bool = False) -> ToolCall:
         if not url:
             return ToolCall("extract_webpage_content", False, "URL is required.")
-        fetched = self.fetch_url(url)
+        fetched = self.fetch_url(url, confirm=confirm)
         if not fetched.ok:
             return fetched
         return ToolCall("extract_webpage_content", True, self._extract_text_from_html(fetched.summary, query=query), {"url": url})
@@ -1472,8 +1630,10 @@ class ToolRuntime:
             return ToolCall("parse_json_api", False, f"Invalid JSON: {exc}")
         return ToolCall("parse_json_api", True, "json ok", data)
 
-    def download_file(self, url: str, destination: str) -> ToolCall:
-        fetched = self.fetch_url(url, max_chars=200_000, max_bytes=200_000)
+    def download_file(self, url: str, destination: str, confirm: bool = False) -> ToolCall:
+        if not confirm:
+            return ToolCall("download_file", False, "Confirmation required for download_file.", {"requires_confirmation": True})
+        fetched = self.fetch_url(url, confirm=confirm, max_chars=200_000, max_bytes=200_000)
         if not fetched.ok:
             return fetched
         return self.write_file(destination, fetched.summary)

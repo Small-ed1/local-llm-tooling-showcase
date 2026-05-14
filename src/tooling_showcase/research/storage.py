@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-import json
 import re
 
 from tooling_showcase.research.schemas import ResearchSession
+from tooling_showcase.state_io import atomic_write_json, atomic_write_text, read_json
 
 
 class ResearchStorage:
@@ -18,9 +18,8 @@ class ResearchStorage:
     def list_sessions(self) -> list[dict]:
         sessions = []
         for path in sorted(self.sessions_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
+            payload = read_json(path, None)
+            if not isinstance(payload, dict):
                 continue
             sessions.append(self.summary(payload))
         return sessions
@@ -29,17 +28,13 @@ class ResearchStorage:
         path = self.session_path(session_id)
         if not path.exists():
             return None
-        return ResearchSession.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        return ResearchSession.from_dict(read_json(path, {}))
 
     def save(self, session: ResearchSession) -> dict:
         payload = session.to_dict()
-        self.session_path(session.id).write_text(
-            json.dumps(payload, indent=2, sort_keys=True),
-            encoding="utf-8",
-            newline="\n",
-        )
+        atomic_write_json(self.session_path(session.id), payload)
         if session.report:
-            self.report_path(session.id).write_text(session.report, encoding="utf-8", newline="\n")
+            atomic_write_text(self.report_path(session.id), session.report)
         elif self.report_path(session.id).exists():
             self.report_path(session.id).unlink()
         return payload

@@ -2592,6 +2592,9 @@ async function runManualTool() {
     });
     if (res.status === 404) throw new Error("manual endpoint missing");
     result = await res.json();
+    if (!res.ok) {
+      result = { ok: false, tool_call: { tool_name: tool, ok: false, summary: result.error || `HTTP ${res.status}`, data: result } };
+    }
   } catch {
     result = await runManualToolFallback(tool, args);
   }

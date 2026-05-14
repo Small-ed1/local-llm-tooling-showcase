@@ -19,20 +19,17 @@ class OllamaClient:
     def _stabilize_payload(self, payload: dict) -> dict:
         opts = dict(payload.get("options") or {})
         payload["think"] = bool(payload.get("think", False) or opts.get("enable_thinking", False) or opts.get("think", False))
-        opts["num_ctx"] = 4096
-        opts["num_batch"] = 128
-        opts["num_gpu"] = -1
-        opts["main_gpu"] = 0
-        opts["num_thread"] = 6
-
-        try:
-            predict = int(opts.get("num_predict", 512))
-        except (TypeError, ValueError):
-            predict = 512
-        if predict < 0 or predict > 512:
-            predict = 512
-
-        opts["num_predict"] = predict
+        defaults = {
+            "num_ctx": (4096, 512, 65536),
+            "num_batch": (128, 1, 4096),
+            "num_gpu": (-1, -1, 999),
+            "main_gpu": (0, 0, 64),
+            "num_thread": (6, 1, 256),
+            "num_predict": (512, -2, 8192),
+        }
+        for key, (default, minimum, maximum) in defaults.items():
+            opts.setdefault(key, default)
+            opts[key] = _safe_int(opts.get(key), default, minimum=minimum, maximum=maximum)
         opts.pop("enable_thinking", None)
         opts.pop("think", None)
         payload["options"] = opts
@@ -264,3 +261,11 @@ def _normalize_model_choice(model: str | None) -> str | None:
     if not value or value.lower() in {"none", "null", "auto", "default"}:
         return None
     return value
+
+
+def _safe_int(value, default: int, *, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))

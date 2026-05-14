@@ -20,8 +20,17 @@ from tooling_showcase.models import ActionResult
 from tooling_showcase.research import ResearchLab
 from tooling_showcase.service import ShowcaseService
 from tooling_showcase.server_metadata import ADAPTER_USAGE, TOOL_DOCS
+from tooling_showcase.state_io import atomic_write_text
 
 STATIC_DIR = Path(__file__).with_name("static")
+MAX_JSON_BODY_BYTES = 1_000_000
+
+
+class JsonBodyError(ValueError):
+    def __init__(self, message: str, status: HTTPStatus) -> None:
+        super().__init__(message)
+        self.message = message
+        self.status = status
 
 
 def run_server(
@@ -133,6 +142,12 @@ def run_server(
             self.send_error(HTTPStatus.NOT_FOUND)
 
         def do_POST(self) -> None:  # noqa: N802
+            try:
+                self._do_POST()
+            except JsonBodyError as exc:
+                self._send_json({"ok": False, "error": exc.message}, status=exc.status)
+
+        def _do_POST(self) -> None:
             clean_path = urlparse(self.path).path
 
             if clean_path == "/api/research/start":
@@ -349,7 +364,7 @@ def run_server(
                     path.parent.mkdir(parents=True, exist_ok=True)
                     if path.exists():
                         cleared = sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
-                    path.write_text("", encoding="utf-8", newline="\n")
+                    atomic_write_text(path, "")
                 except OSError as exc:
                     self._send_json({"ok": False, "error": f"Failed to clear journal: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                     return
@@ -362,9 +377,26 @@ def run_server(
                 goal = str(payload.get("goal", "")).strip()
                 max_steps = _safe_int(payload.get("max_steps"), 5, minimum=1, maximum=50)
                 confirm = bool(payload.get("confirm", False))
+                model = _optional_string(payload.get("model"))
+                system_prompt = _optional_string(payload.get("system_prompt"))
+                options = payload.get("options") if isinstance(payload.get("options"), dict) else None
+                options = _stabilize_ollama_options(options)
+                ollama_timeout_seconds = _optional_timeout(payload.get("ollama_timeout_seconds"), service.config.ollama.timeout_seconds)
+                tool_timeout_seconds = _optional_timeout(payload.get("tool_timeout_seconds"), service.config.shell_policy.timeout_seconds)
+                max_tool_calls_per_step = _safe_int(payload.get("max_tool_calls_per_step"), 3, minimum=0, maximum=12)
 
                 try:
-                    result = service.run_autonomous(goal, max_steps=max_steps, confirm=confirm)
+                    result = service.run_autonomous(
+                        goal,
+                        max_steps=max_steps,
+                        confirm=confirm,
+                        model=model,
+                        system_prompt=system_prompt,
+                        options=options,
+                        ollama_timeout_seconds=ollama_timeout_seconds,
+                        tool_timeout_seconds=tool_timeout_seconds,
+                        max_tool_calls_per_step=max_tool_calls_per_step,
+                    )
                 except Exception as exc:
                     result = ActionResult(False, f"Autonomous run failed before completion: {exc}")
 
@@ -413,12 +445,22 @@ def run_server(
             return
 
         def _read_json_body(self) -> dict:
-            length = int(self.headers.get("Content-Length", "0"))
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError as exc:
+                raise JsonBodyError("Invalid Content-Length header.", HTTPStatus.BAD_REQUEST) from exc
+            if length > MAX_JSON_BODY_BYTES:
+                raise JsonBodyError(
+                    f"JSON body is too large. Maximum is {MAX_JSON_BODY_BYTES} bytes.",
+                    HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                )
             try:
                 payload = json.loads(self.rfile.read(length) or b"{}")
-            except json.JSONDecodeError:
-                return {}
-            return payload if isinstance(payload, dict) else {}
+            except json.JSONDecodeError as exc:
+                raise JsonBodyError(f"Invalid JSON body: {exc}", HTTPStatus.BAD_REQUEST) from exc
+            if not isinstance(payload, dict):
+                raise JsonBodyError("JSON body must be an object.", HTTPStatus.BAD_REQUEST)
+            return payload
 
         def _send_static_file(self, path: Path, *, head_only: bool = False) -> None:
             try:
@@ -757,7 +799,7 @@ def _delete_journal_event(path: Path, event: dict) -> bool:
 
     del lines[delete_index]
     text = "\n".join(line for line in lines if line.strip())
-    path.write_text((text + "\n") if text else "", encoding="utf-8", newline="\n")
+    atomic_write_text(path, (text + "\n") if text else "")
     return True
 
 
@@ -806,6 +848,7 @@ def _event_ok(event: dict):
 
 
 def _runtime_info(service: ShowcaseService, events: list[dict]) -> dict:
+    structure = service.tools.tool_structure()
     return {
         "ok": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -818,6 +861,32 @@ def _runtime_info(service: ShowcaseService, events: list[dict]) -> dict:
         "ollama_endpoint": service.config.ollama.endpoint,
         "ollama_timeout_seconds": service.config.ollama.timeout_seconds,
         "tool_timeout_seconds": service.config.shell_policy.timeout_seconds,
+        "permissions": {
+            "planner_visible_tools": (structure.data or {}).get("planner_visible", []),
+            "manual_only_tools": (structure.data or {}).get("manual_only", []),
+            "manual_mutation_tools": [
+                item["id"]
+                for item in (structure.data or {}).get("tools", [])
+                if item.get("risk", {}).get("requires_confirmation")
+            ],
+            "shell_policy": {
+                "blocked_executables": service.config.shell_policy.blocked_executables,
+                "risky_executables": service.config.shell_policy.risky_executables,
+                "risky_git_subcommands": service.config.shell_policy.risky_git_subcommands,
+                "require_confirmation_for_risky": service.config.shell_policy.require_confirmation_for_risky,
+            },
+            "url_fetch_policy": {
+                "blocks_without_confirmation": [
+                    "localhost",
+                    "loopback",
+                    "RFC1918/private",
+                    "link-local",
+                    "metadata IPs",
+                    "non-global IPs",
+                ],
+                "confirmation_allows_private_targets": True,
+            },
+        },
     }
 
 
@@ -916,21 +985,17 @@ def _split_thinking(message: str) -> tuple[str, str]:
 def _stabilize_ollama_options(value) -> dict:
     opts = dict(value or {})
 
-    opts["num_ctx"] = 4096
-    opts["num_batch"] = 128
-    opts["num_gpu"] = -1
-    opts["main_gpu"] = 0
-    opts["num_thread"] = 6
-
-    try:
-        predict = int(opts.get("num_predict", 512))
-    except (TypeError, ValueError):
-        predict = 512
-
-    if predict < 0 or predict > 512:
-        predict = 512
-
-    opts["num_predict"] = predict
+    defaults = {
+        "num_ctx": (4096, 512, 65536),
+        "num_batch": (128, 1, 4096),
+        "num_gpu": (-1, -1, 999),
+        "main_gpu": (0, 0, 64),
+        "num_thread": (6, 1, 256),
+        "num_predict": (512, -2, 8192),
+    }
+    for key, (default, minimum, maximum) in defaults.items():
+        opts.setdefault(key, default)
+        opts[key] = _safe_int(opts.get(key), default, minimum=minimum, maximum=maximum)
 
     return opts
 

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import inspect
+import json
 from typing import Any
 
 from tooling_showcase.benchmarking import benchmark_profiles, default_benchmark_path, list_ollama_models, load_benchmark_results
 from tooling_showcase.config import ShowcaseConfig
 from tooling_showcase.journal import EventJournal
-from tooling_showcase.model_routing import route_model
 from tooling_showcase.models import ActionResult, ToolCall
 from tooling_showcase.ollama import OllamaClient
 from tooling_showcase.router import IntentRouter
@@ -15,18 +15,17 @@ from tooling_showcase.service_fallbacks import DirectFallbackMixin
 from tooling_showcase.service_planner import PlannerLoopMixin
 from tooling_showcase.service_prompts import (
     PromptFormattingMixin,
-    conversation_history_text as _conversation_history_text,
-    has_contextual_reference as _has_contextual_reference,
-    normalize_chat_messages as _normalize_chat_messages,
     replace_last_user_message as _replace_last_user_message,
 )
+from tooling_showcase.service_request import RequestPlanningMixin
 from tooling_showcase.service_streaming import StreamingResponseMixin
-from tooling_showcase.tool_protocol import TOOL_SCHEMAS, compact_tool_result
+from tooling_showcase.tool_protocol import compact_tool_result, parse_model_json
 from tooling_showcase.tools import ToolRuntime
 
 
 class ShowcaseService(
     PromptFormattingMixin,
+    RequestPlanningMixin,
     DirectFallbackMixin,
     PlannerLoopMixin,
     StreamingResponseMixin,
@@ -68,37 +67,29 @@ class ShowcaseService(
         if not text:
             return ActionResult(False, "Empty message.")
 
-        chat_messages = _normalize_chat_messages(messages, text)
-        tool_signal_text = f"{_conversation_history_text(chat_messages)}\n\nCurrent user message: {text}" if _has_contextual_reference(text) else text
-
-        model_route = route_model(text)
-        model_route_data = model_route.as_dict()
-        requested_model = self._normalize_model_choice(model)
-        if requested_model is None:
-            model_route_data = self._route_with_benchmark_profile(model_route_data)
-        selected_model = requested_model or str(model_route_data.get("model") or model_route.profile.model)
-        selected_options = self._merge_options(options or ollama_options)
-        enable_thinking, selected_options = self._extract_think(selected_options)
-        enable_thinking = enable_thinking and self._supports_thinking(selected_model)
-
-        available_tools = self.tools.available_tools()
-        planner_tools = [name for name in available_tools if name in TOOL_SCHEMAS]
+        context = self._prepare_request_context(
+            text,
+            model=model,
+            options=options,
+            ollama_options=ollama_options,
+            messages=messages,
+        )
 
         if allow_tools:
             direct = self._deterministic_tool_route(
                 text,
                 confirm=confirm,
-                model=selected_model,
-                model_route=model_route_data,
-                available_tools=available_tools,
+                model=context.selected_model,
+                model_route=context.model_route_data,
+                available_tools=context.available_tools,
                 tool_timeout_seconds=tool_timeout_seconds,
             )
             if direct is not None:
                 self._log_chat(
                     text=text,
                     result=direct,
-                    model=selected_model,
-                    model_route=model_route_data,
+                    model=context.selected_model,
+                    model_route=context.model_route_data,
                     tool_calls=direct.tool_calls,
                     mode="deterministic_tool_route",
                 )
@@ -110,8 +101,8 @@ class ShowcaseService(
                 self._log_chat(
                     text=text,
                     result=legacy,
-                    model=selected_model,
-                    model_route=model_route_data,
+                    model=context.selected_model,
+                    model_route=context.model_route_data,
                     tool_calls=legacy.tool_calls,
                     mode="legacy_direct_tool_fallback_no_ollama",
                 )
@@ -119,8 +110,8 @@ class ShowcaseService(
 
             result = ActionResult(False, "Local Ollama fallback is disabled.")
             result.data = {
-                "model": selected_model,
-                "model_route": model_route_data,
+                "model": context.selected_model,
+                "model_route": context.model_route_data,
             }
             self.journal.append(
                 {
@@ -135,20 +126,20 @@ class ShowcaseService(
         if not allow_tools:
             result = self._answer_direct(
                 text,
-                model=selected_model,
+                model=context.selected_model,
                 system_prompt=system_prompt,
-                options=selected_options,
+                options=context.selected_options,
                 response_format=response_format,
-                model_route=model_route_data,
-                think=enable_thinking,
+                model_route=context.model_route_data,
+                think=context.enable_thinking,
                 ollama_timeout_seconds=ollama_timeout_seconds,
-                messages=chat_messages,
+                messages=context.chat_messages,
             )
             self._log_chat(
                 text=text,
                 result=result,
-                model=selected_model,
-                model_route=model_route_data,
+                model=context.selected_model,
+                model_route=context.model_route_data,
                 tool_calls=[],
                 mode="chat_no_tools",
             )
@@ -159,44 +150,44 @@ class ShowcaseService(
             result = self._answer_with_context(
                 user_text=text,
                 tool_context=[compact_tool_result(call) for call in contextual_calls],
-                model=selected_model,
+                model=context.selected_model,
                 system_prompt=system_prompt,
-                options=selected_options,
+                options=context.selected_options,
                 response_format=response_format,
-                model_route=model_route_data,
+                model_route=context.model_route_data,
                 show_tool_traces=show_tool_traces,
-                think=enable_thinking,
+                think=context.enable_thinking,
                 ollama_timeout_seconds=ollama_timeout_seconds,
-                messages=chat_messages,
+                messages=context.chat_messages,
             )
             result.tool_calls.extend(contextual_calls)
             self._log_chat(
                 text=text,
                 result=result,
-                model=selected_model,
-                model_route=model_route_data,
+                model=context.selected_model,
+                model_route=context.model_route_data,
                 tool_calls=contextual_calls,
                 mode="contextual_web_answer",
             )
             return result
 
-        if not self._likely_needs_tools(tool_signal_text):
+        if not self._likely_needs_tools(context.tool_signal_text):
             result = self._answer_direct(
                 text,
-                model=selected_model,
+                model=context.selected_model,
                 system_prompt=system_prompt,
-                options=selected_options,
+                options=context.selected_options,
                 response_format=response_format,
-                model_route=model_route_data,
-                think=enable_thinking,
+                model_route=context.model_route_data,
+                think=context.enable_thinking,
                 ollama_timeout_seconds=ollama_timeout_seconds,
-                messages=chat_messages,
+                messages=context.chat_messages,
             )
             self._log_chat(
                 text=text,
                 result=result,
-                model=selected_model,
-                model_route=model_route_data,
+                model=context.selected_model,
+                model_route=context.model_route_data,
                 tool_calls=[],
                 mode="chat_direct_no_tool_signals",
             )
@@ -205,17 +196,17 @@ class ShowcaseService(
         return self._run_tool_loop(
             text=text,
             confirm=confirm,
-            selected_model=selected_model,
+            selected_model=context.selected_model,
             system_prompt=system_prompt,
-            selected_options=selected_options,
+            selected_options=context.selected_options,
             response_format=response_format,
-            model_route_data=model_route_data,
+            model_route_data=context.model_route_data,
             show_tool_traces=show_tool_traces,
-            enable_thinking=enable_thinking,
+            enable_thinking=context.enable_thinking,
             ollama_timeout_seconds=ollama_timeout_seconds,
             tool_timeout_seconds=tool_timeout_seconds,
-            chat_messages=chat_messages,
-            planner_tools=planner_tools,
+            chat_messages=context.chat_messages,
+            planner_tools=context.planner_tools,
             max_tool_calls=max_tool_calls,
         )
 
@@ -422,35 +413,160 @@ class ShowcaseService(
         *,
         max_steps: int = 5,
         confirm: bool = False,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        options: dict[str, Any] | None = None,
+        ollama_timeout_seconds: int | None = None,
+        tool_timeout_seconds: int | None = None,
+        max_tool_calls_per_step: int = 3,
     ) -> ActionResult:
-        steps = [f"autonomous_step_{index + 1}" for index in range(max_steps)]
+        goal = str(goal or "").strip()
+        if not goal:
+            return ActionResult(False, "Autonomous goal is empty.")
+        steps = self._plan_autonomous_steps(
+            goal,
+            max_steps=max_steps,
+            model=model,
+            system_prompt=system_prompt,
+            options=options,
+            ollama_timeout_seconds=ollama_timeout_seconds,
+        )
         plan_result = self.tools.plan_task(goal, steps)
         if not plan_result.ok:
             return ActionResult(False, f"Failed to plan task: {plan_result.summary}", tool_calls=[plan_result])
 
         task_id = str((plan_result.data or {}).get("task_id", ""))
         calls = [plan_result]
-        for step_num in range(max_steps):
+        step_results: list[dict[str, Any]] = []
+        for step_num, step_title in enumerate(steps):
             execute_result = self.tools.execute_step(task_id, step_num)
             calls.append(execute_result)
             if not execute_result.ok:
                 break
+            step_prompt = self._autonomous_step_prompt(goal, steps, step_num, step_results)
             step_result = self.handle(
-                goal,
+                step_prompt,
                 confirm=confirm,
+                model=model,
+                system_prompt=system_prompt,
+                options=options,
                 allow_tools=True,
-                max_tool_calls=1,
+                max_tool_calls=max_tool_calls_per_step,
                 show_tool_traces=True,
+                ollama_timeout_seconds=ollama_timeout_seconds,
+                tool_timeout_seconds=tool_timeout_seconds,
             )
             calls.extend(step_result.tool_calls)
+            step_results.append(
+                {
+                    "step": step_num + 1,
+                    "title": step_title,
+                    "ok": step_result.ok,
+                    "message": step_result.message,
+                    "tool_calls": [asdict(call) for call in step_result.tool_calls],
+                }
+            )
+            calls.append(self.tools.task_checkpoint(task_id, f"Step {step_num + 1}: {step_result.message[:1000]}"))
+            if not step_result.ok:
+                calls.append(self.tools.mark_step_failed(task_id, step_num, step_result.message))
+                break
             calls.append(self.tools.mark_step_complete(task_id, step_num))
 
         status_result = self.tools.get_task_status(task_id)
         calls.append(status_result)
+        task_status = (status_result.data or {}).get("status")
+        ok = bool(status_result.ok and task_status == "completed")
+        summary_lines = [f"{item['step']}. {item['title']}: {'ok' if item['ok'] else 'failed'}" for item in step_results]
         result = ActionResult(
-            status_result.ok,
-            f"Autonomous run completed: {goal}",
-            data={"autonomous": True, "max_steps": max_steps, "task_id": task_id},
+            ok,
+            f"Autonomous run {'completed' if ok else 'stopped'}: {goal}\n" + "\n".join(summary_lines),
+            data={
+                "autonomous": True,
+                "max_steps": max_steps,
+                "task_id": task_id,
+                "steps": steps,
+                "step_results": step_results,
+                "task_status": task_status,
+                "model": model,
+            },
             tool_calls=calls,
         )
         return result
+
+    def _plan_autonomous_steps(
+        self,
+        goal: str,
+        *,
+        max_steps: int,
+        model: str | None,
+        system_prompt: str | None,
+        options: dict[str, Any] | None,
+        ollama_timeout_seconds: int | None,
+    ) -> list[str]:
+        max_steps = max(1, min(int(max_steps), 12))
+        if self.config.ollama.enabled:
+            prompt = f"""
+Create an execution plan for an autonomous local assistant run.
+Return JSON only: {{"steps": ["short imperative step", "..."]}}.
+Use between 1 and {max_steps} concrete steps.
+Each step must be directly executable by a chat assistant with local tools.
+
+Goal:
+{goal}
+""".strip()
+            result = self._ask_ollama(
+                prompt,
+                model=self._normalize_model_choice(model),
+                system_prompt=system_prompt,
+                response_format="json",
+                options=self._merge_options(options),
+                timeout_seconds=ollama_timeout_seconds,
+            )
+            if result.ok:
+                try:
+                    payload = parse_model_json(result.message)
+                    raw_steps = payload.get("steps") if isinstance(payload, dict) else None
+                    steps = [str(step).strip() for step in raw_steps or [] if str(step).strip()]
+                    if steps:
+                        return steps[:max_steps]
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    pass
+        return self._fallback_autonomous_steps(goal, max_steps=max_steps)
+
+    def _fallback_autonomous_steps(self, goal: str, *, max_steps: int) -> list[str]:
+        candidates = [
+            f"Inspect local context relevant to: {goal}",
+            "Use the most relevant tools to gather missing evidence.",
+            "Apply the requested change or produce the requested result.",
+            "Verify the result with focused checks.",
+            "Summarize what changed and any remaining risk.",
+        ]
+        return candidates[: max(1, min(max_steps, len(candidates)))]
+
+    def _autonomous_step_prompt(
+        self,
+        goal: str,
+        steps: list[str],
+        step_index: int,
+        previous_results: list[dict[str, Any]],
+    ) -> str:
+        previous = "\n".join(
+            f"- Step {item['step']} {item['title']}: {item['message'][:500]}"
+            for item in previous_results
+        ) or "No previous autonomous steps have run."
+        plan = "\n".join(f"{index + 1}. {step}" for index, step in enumerate(steps))
+        return f"""
+Autonomous goal:
+{goal}
+
+Plan:
+{plan}
+
+Previous step results:
+{previous}
+
+Current step {step_index + 1}:
+{steps[step_index]}
+
+Complete only the current step. Use tools when they are needed. End with a concise status for this step.
+""".strip()

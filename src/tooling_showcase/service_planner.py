@@ -26,6 +26,49 @@ class PlannerLoopMixin:
         planner_tools: list[str],
         max_tool_calls: int,
     ) -> ActionResult:
+        final_result: ActionResult | None = None
+        for event in self._iter_tool_loop_events(
+            text=text,
+            confirm=confirm,
+            selected_model=selected_model,
+            system_prompt=system_prompt,
+            selected_options=selected_options,
+            response_format=response_format,
+            model_route_data=model_route_data,
+            show_tool_traces=show_tool_traces,
+            enable_thinking=enable_thinking,
+            ollama_timeout_seconds=ollama_timeout_seconds,
+            tool_timeout_seconds=tool_timeout_seconds,
+            chat_messages=chat_messages,
+            planner_tools=planner_tools,
+            max_tool_calls=max_tool_calls,
+            emit_content_delta=False,
+        ):
+            if event["type"] == "final_result":
+                final_result = event["result"]
+        if final_result is None:
+            return ActionResult(False, "Tool loop ended without a final result.")
+        return final_result
+
+    def _iter_tool_loop_events(
+        self,
+        *,
+        text: str,
+        confirm: bool,
+        selected_model: str,
+        system_prompt: str | None,
+        selected_options: dict[str, Any],
+        response_format: str | dict | None,
+        model_route_data: dict[str, Any],
+        show_tool_traces: bool,
+        enable_thinking: bool,
+        ollama_timeout_seconds: int | None,
+        tool_timeout_seconds: int | None,
+        chat_messages: list[dict[str, str]],
+        planner_tools: list[str],
+        max_tool_calls: int,
+        emit_content_delta: bool,
+    ):
         tool_calls: list[ToolCall] = []
         tool_context: list[str] = []
         executed_signatures: set[tuple[str, str]] = set()
@@ -67,7 +110,8 @@ class PlannerLoopMixin:
                     tool_calls=tool_calls,
                     mode="tool_decision_failed",
                 )
-                return result
+                yield {"type": "final_result", "result": result}
+                return
 
             try:
                 decision = parse_model_json(decision_result.message)
@@ -95,7 +139,8 @@ class PlannerLoopMixin:
                     tool_calls=tool_calls,
                     mode="invalid_tool_json_recovered",
                 )
-                return fallback
+                yield {"type": "final_result", "result": fallback}
+                return
 
             action = str(decision.get("action") or decision.get("type") or "").strip().lower()
 
@@ -104,9 +149,11 @@ class PlannerLoopMixin:
                 if decision.get("message") and "<END_OF_MESSAGE>" not in answer_text:
                     continue
                 if answer_text and self._requires_tree_context(text) and not any(call.tool_name == "tree_view" for call in tool_calls):
+                    yield {"type": "tool_start", "tool_name": "tree_view", "arguments": {"path": ".", "max_depth": 4}}
                     call = self.tools.run_tool("tree_view", {"path": ".", "max_depth": 4}, confirm=confirm, timeout_seconds=tool_timeout_seconds)
                     tool_calls.append(call)
                     tool_context.append(compact_tool_result(call))
+                    yield {"type": "tool_result", "tool_call": call, "tool_calls": list(tool_calls)}
                     continue
                 if answer_text and not enable_thinking and response_format is None:
                     answer_text = self._strip_loop_end_marker(answer_text)
@@ -128,7 +175,10 @@ class PlannerLoopMixin:
                         tool_calls=tool_calls,
                         mode="model_answered_without_more_tools",
                     )
-                    return result
+                    if emit_content_delta:
+                        yield {"type": "content_delta", "delta": answer_text}
+                    yield {"type": "final_result", "result": result}
+                    return
 
                 break
 
@@ -163,6 +213,7 @@ class PlannerLoopMixin:
                 )
                 tool_calls.append(bad_call)
                 tool_context.append(compact_tool_result(bad_call))
+                yield {"type": "tool_result", "tool_call": bad_call, "tool_calls": list(tool_calls)}
                 continue
 
             safe_auto_run = self._safe_auto_run(tool_name)
@@ -178,12 +229,15 @@ class PlannerLoopMixin:
                 )
                 tool_calls.append(blocked)
                 tool_context.append(compact_tool_result(blocked))
+                yield {"type": "tool_result", "tool_call": blocked, "tool_calls": list(tool_calls)}
                 break
 
+            yield {"type": "tool_start", "tool_name": tool_name, "arguments": normalized_args}
             call = self.tools.run_tool(tool_name, normalized_args, confirm=confirm, timeout_seconds=tool_timeout_seconds)
             executed_signatures.add(signature)
             tool_calls.append(call)
             tool_context.append(compact_tool_result(call))
+            yield {"type": "tool_result", "tool_call": call, "tool_calls": list(tool_calls)}
 
             continue
 
@@ -210,4 +264,4 @@ class PlannerLoopMixin:
             tool_calls=tool_calls,
             mode="model_tool_loop",
         )
-        return result
+        yield {"type": "final_result", "result": result}

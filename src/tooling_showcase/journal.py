@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 import json
 
+from tooling_showcase.state_io import path_lock
+
 
 class EventJournal:
     def __init__(self, path: Path) -> None:
@@ -16,14 +18,16 @@ class EventJournal:
             "recorded_at": datetime.now(timezone.utc).isoformat(),
             **payload,
         }
-        with self.path.open("a", encoding="utf-8", newline="\n") as handle:
-            handle.write(json.dumps(_normalize(record), sort_keys=True))
-            handle.write("\n")
+        with path_lock(self.path):
+            with self.path.open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write(json.dumps(_normalize(record), sort_keys=True))
+                handle.write("\n")
 
     def tail(self, limit: int = 10) -> list[dict]:
-        if not self.path.exists():
-            return []
-        lines = self.path.read_text(encoding="utf-8").splitlines()
+        with path_lock(self.path):
+            if not self.path.exists():
+                return []
+            lines = self.path.read_text(encoding="utf-8").splitlines()
         return [json.loads(line) for line in lines[-limit:]]
 
 

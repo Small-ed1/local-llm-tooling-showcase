@@ -319,24 +319,36 @@ def test_web_tools_with_local_http_server_and_stubbed_search(tmp_path: Path):
     base_url = f"http://127.0.0.1:{server.server_port}"
 
     try:
-        fetched = runtime.fetch_url(f"{base_url}/page")
+        blocked_local = runtime.fetch_url(f"{base_url}/page")
+        assert blocked_local.ok is False
+        assert "SSRF protection" in blocked_local.summary
+
+        fetched = runtime.fetch_url(f"{base_url}/page", confirm=True)
         assert fetched.ok is True
         assert "Hello world" in fetched.summary
         assert fetched.data["status"] == 200
         assert fetched.data["content_type"].startswith("text/html")
 
-        extracted = runtime.extract_webpage_content(url=f"{base_url}/page")
+        expanded_blocked = runtime.expand_search_result(f"{base_url}/page")
+        assert expanded_blocked.ok is False
+        assert "SSRF protection" in expanded_blocked.summary
+
+        extracted = runtime.extract_webpage_content(url=f"{base_url}/page", confirm=True)
         assert extracted.ok is True
         assert "Demo" in extracted.summary
         assert "Hello world" in extracted.summary
 
-        parsed = runtime.parse_json_api(f"{base_url}/data")
+        parsed = runtime.parse_json_api(f"{base_url}/data", confirm=True)
         assert parsed.ok is True
         assert parsed.data["ok"] is True
 
-        downloaded = runtime.download_file(f"{base_url}/file", "download.txt")
+        downloaded = runtime.download_file(f"{base_url}/file", "download.txt", confirm=True)
         assert downloaded.ok is True
         assert runtime.read_file("download.txt").summary == "downloaded"
+
+        metadata = runtime.fetch_url("http://169.254.169.254/latest/meta-data/")
+        assert metadata.ok is False
+        assert "metadata IP" in metadata.summary
 
         rejected = runtime.fetch_url("file:///etc/passwd")
         assert rejected.ok is False
@@ -574,6 +586,29 @@ def test_shell_policy_parses_executables_and_argument_patterns(tmp_path: Path):
     quoted_text = runtime.shell_command("python -c \"print('rm temp.txt')\"", confirm=False)
     assert quoted_text.ok is True
     assert quoted_text.summary == "rm temp.txt"
+
+
+def test_manual_mutation_tools_require_confirmation_and_type_errors_do_not_retry(tmp_path: Path):
+    runtime = make_runtime(tmp_path)
+    blocked = runtime.run_tool("write_file", {"path": "owned.txt", "content": "owned"}, confirm=False)
+    assert blocked.ok is False
+    assert blocked.data["requires_confirmation"] is True
+    assert not (runtime.config.workspace_root / "owned.txt").exists()
+
+    allowed = runtime.run_tool("write_file", {"path": "owned.txt", "content": "owned"}, confirm=True)
+    assert allowed.ok is True
+    assert (runtime.config.workspace_root / "owned.txt").read_text(encoding="utf-8") == "owned"
+
+    calls = {"count": 0}
+
+    def boom(value: str):
+        calls["count"] += 1
+        raise TypeError("internal type problem")
+
+    runtime.boom = boom
+    failed = runtime.run_tool("boom", {"value": "x"})
+    assert failed.ok is False
+    assert calls["count"] == 1
 
 
 def test_tool_stats_tracking_success(tmp_path: Path):

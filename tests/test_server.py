@@ -1,4 +1,12 @@
-from tooling_showcase.server import _html_page, _manual_tool_api_disabled_payload, _manual_tool_api_enabled
+from http import HTTPStatus
+
+from tooling_showcase.server import (
+    JsonBodyError,
+    _html_page,
+    _manual_tool_api_disabled_payload,
+    _manual_tool_api_enabled,
+    _stabilize_ollama_options,
+)
 
 
 def test_web_ui_contains_chat_and_run_controls():
@@ -29,3 +37,29 @@ def test_manual_tool_api_requires_loopback_or_explicit_remote_opt_in(monkeypatch
     monkeypatch.setenv("TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API", "1")
     assert _manual_tool_api_enabled("0.0.0.0") is True
     assert _manual_tool_api_disabled_payload("0.0.0.0")["ok"] is False
+
+
+def test_server_preserves_user_ollama_option_overrides():
+    opts = _stabilize_ollama_options(
+        {
+            "num_ctx": 8192,
+            "num_batch": 64,
+            "num_gpu": 3,
+            "main_gpu": 1,
+            "num_thread": 12,
+            "num_predict": 2048,
+        }
+    )
+
+    assert opts["num_ctx"] == 8192
+    assert opts["num_batch"] == 64
+    assert opts["num_gpu"] == 3
+    assert opts["main_gpu"] == 1
+    assert opts["num_thread"] == 12
+    assert opts["num_predict"] == 2048
+
+
+def test_json_body_error_carries_http_status():
+    error = JsonBodyError("too large", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+    assert error.message == "too large"
+    assert error.status == HTTPStatus.REQUEST_ENTITY_TOO_LARGE

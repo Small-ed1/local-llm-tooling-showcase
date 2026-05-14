@@ -79,6 +79,7 @@ def test_settings_button_toggles_modal_visibility():
     assert "function toggleSettings" in app
     assert 'addEventListener("click", toggleSettings)' in app
     assert "Close settings" in app
+    assert "HTTP ${res.status}" in app
 
 
 def test_static_ui_records_local_storage_schema_version():

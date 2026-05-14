@@ -25,8 +25,33 @@ def test_ollama_payload_stabilization_clamps_runtime_options():
     assert payload["options"]["num_gpu"] == -1
     assert payload["options"]["main_gpu"] == 0
     assert payload["options"]["num_thread"] == 6
-    assert payload["options"]["num_predict"] == 512
+    assert payload["options"]["num_predict"] == 5000
     assert "enable_thinking" not in payload["options"]
+
+
+def test_ollama_payload_stabilization_preserves_runtime_overrides():
+    client = OllamaClient(OllamaConfig())
+
+    payload = client._stabilize_payload(
+        {
+            "think": False,
+            "options": {
+                "num_ctx": 8192,
+                "num_batch": 64,
+                "num_gpu": 2,
+                "main_gpu": 1,
+                "num_thread": 12,
+                "num_predict": -1,
+            },
+        }
+    )
+
+    assert payload["options"]["num_ctx"] == 8192
+    assert payload["options"]["num_batch"] == 64
+    assert payload["options"]["num_gpu"] == 2
+    assert payload["options"]["main_gpu"] == 1
+    assert payload["options"]["num_thread"] == 12
+    assert payload["options"]["num_predict"] == -1
 
 
 def test_ollama_payload_stabilization_preserves_explicit_thinking():

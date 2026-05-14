@@ -15,13 +15,15 @@ This project is a local-first assistant runtime. It can inspect files, call tool
 - Adding a method to `ToolRuntime` does not expose it to the planner unless a schema is added.
 - Shell commands are confirmation-gated for risky executable names and blocked for known destructive command/argument patterns.
 - Shell filtering uses `shlex` parsing for common command shapes plus raw-pattern fallback. It is a guardrail, not a sandbox.
-- File write/delete/git mutation tools exist in the runtime but are not planner-visible by default.
+- File write/delete/git mutation tools exist in the runtime but are not planner-visible by default. Manual mutation tools require explicit confirmation through a central runtime risk registry.
+- Planner-visible URL expansion blocks localhost, private/RFC1918, link-local, metadata, and other non-global IP targets unless the call is explicitly confirmed from the manual tool path.
 
 ## Memory And State
 
 - Browser sessions, UI memories, profile settings, prompts, and theme choices are stored in browser local storage.
 - Model-created memories persist in `state/memories.json`.
 - Benchmarks persist in `state/model_benchmarks.json`; event logs persist in `state/events.jsonl`.
+- JSON state writes use lightweight per-path locks and atomic replacement for common state files, but this is still local-process coordination rather than a database.
 - Do not store secrets, credentials, private keys, or sensitive personal data in prompts, memories, benchmark prompts, or examples.
 
 ## Before Public Release

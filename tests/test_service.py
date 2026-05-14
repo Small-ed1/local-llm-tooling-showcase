@@ -574,10 +574,9 @@ def test_service_autonomous_execution_loop(tmp_path: Path):
     service = ShowcaseService(config)
 
     def mock_ask(prompt, system_prompt=None, response_format=None):
-        return ActionResult(
-            True,
-            '{"type":"answer","message":"Step completed. <END_OF_MESSAGE>"}',
-        )
+        if "Create an execution plan" in prompt:
+            return ActionResult(True, '{"steps":["Inspect context","Verify result"]}')
+        return ActionResult(True, '{"type":"answer","message":"Step completed. <END_OF_MESSAGE>"}')
 
     service.ollama.ask = mock_ask
     result = service.run_autonomous("test goal", max_steps=2)
@@ -587,6 +586,7 @@ def test_service_autonomous_execution_loop(tmp_path: Path):
     assert status.ok is True
     assert status.data["status"] == "completed"
     assert len(status.data["steps"]) == 2
+    assert result.data["steps"] == ["Inspect context", "Verify result"]
 
 
 def test_service_autonomous_with_tool_calls(tmp_path: Path):
@@ -596,6 +596,7 @@ def test_service_autonomous_with_tool_calls(tmp_path: Path):
 
     responses = iter(
         [
+            ActionResult(True, '{"steps":["Find the README"]}'),
             ActionResult(
                 True,
                 '{"type":"tool_call","tool_name":"file_search","arguments":{"query":"README"}}',
