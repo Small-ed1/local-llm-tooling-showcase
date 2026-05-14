@@ -57,7 +57,10 @@ def test_static_ui_boots_through_server_in_browser(tmp_path: Path):
                 page.goto(base_url, wait_until="domcontentloaded", timeout=10_000)
                 page.wait_for_selector("#promptInput", state="visible", timeout=5_000)
                 page.wait_for_selector("#sendBtn", state="visible", timeout=5_000)
-                page.wait_for_selector("#toolSelect option", timeout=5_000)
+                page.wait_for_function(
+                      "() => document.querySelectorAll('#toolSelect option').length > 0",
+                      timeout=5_000,
+                )
                 assert page.locator("#runtimeStatusStrip").count() == 1
                 assert page.locator("#toolSelect option").count() > 0
                 assert page_errors == []
