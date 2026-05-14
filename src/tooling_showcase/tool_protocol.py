@@ -8,6 +8,15 @@ from typing import Any
 from tooling_showcase.models import ToolCall
 
 TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "tool_structure": {
+        "description": "Inspect the available runtime tool structure, including groups, aliases, planner-visible tools, and manual-only tools. Use when deciding which tool family to use.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+        "safe_auto_run": True,
+    },
     "web_search": {
         "description": "Search the public web for current, external, or factual information. Use for latest/current versions, releases, prices, news, public documentation, or anything likely to change.",
         "parameters": {
@@ -93,6 +102,30 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "max_depth": {"type": "integer", "description": "Maximum depth to display."},
             },
             "required": [],
+        },
+        "safe_auto_run": True,
+    },
+    "local_doc_search": {
+        "description": "Search local documentation files such as README, AGENTS, SAFETY, SECURITY, CHANGELOG, and files under docs/. Prefer this before web_search when the user asks about this project or local docs.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Documentation search query. Leave empty to list known docs."},
+                "limit": {"type": "integer", "description": "Maximum result count."},
+            },
+            "required": [],
+        },
+        "safe_auto_run": True,
+    },
+    "local_doc_read": {
+        "description": "Read a local documentation file discovered by local_doc_search. Only documentation files are allowed.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Relative documentation path, e.g. README.md or docs/TOOLS.md."},
+                "max_chars": {"type": "integer", "description": "Maximum characters to return."},
+            },
+            "required": ["path"],
         },
         "safe_auto_run": True,
     },

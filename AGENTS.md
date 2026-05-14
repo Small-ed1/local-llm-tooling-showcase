@@ -4,7 +4,7 @@
 
 - Preferred setup: `./install.sh` from repo root. It can create `.venv`, install editable, run tests, run `node --check`, and prompt for benchmarks when more than 3 Ollama models are installed.
 - Manual setup: `python -m venv .venv && . .venv/bin/activate && pip install -e .`.
-- Full local verification before release-facing changes: `git diff --check`, `node --check src/tooling_showcase/static/app.js`, `python -m compileall -q src tests`, `bash -n install.sh && bash -n start-servers.sh`, `pytest tests/`.
+- Full local verification before release-facing changes: `git diff --check`, `node --check src/tooling_showcase/static/app-data.js`, `node --check src/tooling_showcase/static/markdown.js`, `node --check src/tooling_showcase/static/app.js`, `python -m compileall -q src tests`, `bash -n install.sh && bash -n start-servers.sh`, `pytest tests/`.
 - Focused tests work normally, e.g. `pytest tests/test_service.py::test_service_allows_model_memory_tools` or `pytest tests/test_static_ui.py`.
 - If the package is not installed in the current shell, run CLI smoke checks with `PYTHONPATH=src`, e.g. `PYTHONPATH=src python -m tooling_showcase.cli benchmark --list-models`.
 - CI runs Python install/tests, compile checks, shell syntax checks, and `node --check`; local checks remain the release gate before publishing.
@@ -24,7 +24,7 @@
 - `tools.py` owns `ToolRuntime`, state paths, local tool implementations, shell safety, memory storage, and adapter/library access.
 - `tool_protocol.py` is the planner-visible allowlist. Adding a runtime tool does not expose it to models unless it has a schema there.
 - `model_routing.py` contains fallback static model categories; `benchmarking.py` derives local model profiles in `state/model_benchmarks.json`, and benchmarked profiles override auto-routing when present.
-- `server.py` is a stdlib HTTP server; there is no frontend build step. Validate frontend edits with `node --check src/tooling_showcase/static/app.js`.
+- `server.py` is a stdlib HTTP server; there is no frontend build step. Validate frontend edits with `node --check` for each static JavaScript file.
 
 ## State, Environment, And Safety
 

@@ -52,6 +52,42 @@ TOOL_DOCS: tuple[ToolDoc, ...] = (
         ("read file", "open file", "inspect file"),
     ),
     ToolDoc(
+        "local_doc_search",
+        "docs",
+        "local_doc_search",
+        "search local docs",
+        "query, limit optional",
+        "local_doc_search(query='release checks')",
+        ("docs", "documentation", "readme", "guide"),
+    ),
+    ToolDoc(
+        "local_doc_read",
+        "docs",
+        "local_doc_read",
+        "read local docs",
+        "path, max_chars optional",
+        "local_doc_read(path='docs/TOOLS.md')",
+        ("read docs", "documentation", "manual"),
+    ),
+    ToolDoc(
+        "local_doc_replace",
+        "docs",
+        "local_doc_replace",
+        "edit local docs",
+        "path, old, new, confirm",
+        "local_doc_replace(path='docs/TOOLS.md', old='x', new='y', confirm=True)",
+        ("edit docs", "update documentation", "replace documentation"),
+    ),
+    ToolDoc(
+        "local_doc_paths",
+        "docs",
+        "local_doc_paths",
+        "list local docs",
+        "limit optional",
+        "local_doc_paths()",
+        ("list docs", "documentation files"),
+    ),
+    ToolDoc(
         "write_file",
         "filesystem",
         "write_file",
@@ -860,6 +896,15 @@ TOOL_DOCS: tuple[ToolDoc, ...] = (
         "adapter_inventory()",
         ("adapter inventory", "source projects", "provenance"),
     ),
+    ToolDoc(
+        "tool_structure",
+        "tooling",
+        "tool_structure",
+        "inspect tool groups",
+        "no args",
+        "tool_structure()",
+        ("tool structure", "tool groups", "planner tools", "manual tools"),
+    ),
 )
 
 
@@ -883,6 +928,18 @@ TOOL_GROUPS: tuple[ToolGroup, ...] = (
             "tree_view",
         ),
         ("file", "path", "directory", "tree"),
+    ),
+    ToolGroup(
+        "docs",
+        "Docs",
+        "local documentation lookup/read/edit",
+        (
+            "local_doc_paths",
+            "local_doc_search",
+            "local_doc_read",
+            "local_doc_replace",
+        ),
+        ("docs", "documentation", "readme", "guide"),
     ),
     ToolGroup(
         "dev",
@@ -935,7 +992,7 @@ TOOL_GROUPS: tuple[ToolGroup, ...] = (
     ToolGroup(
         "web",
         "Web",
-        "search/fetch/extract/download/pdf/json/screenshot",
+        "search/fetch/extract/download/weather/kernel/json/screenshot",
         (
             "web_search",
             "fetch_url",
@@ -943,6 +1000,8 @@ TOOL_GROUPS: tuple[ToolGroup, ...] = (
             "download_file",
             "parse_pdf",
             "parse_json_api",
+            "weather_lookup",
+            "latest_linux_kernel",
             "screenshot_page",
         ),
         ("web", "url", "html", "pdf", "json"),
@@ -1052,6 +1111,13 @@ TOOL_GROUPS: tuple[ToolGroup, ...] = (
         "source project inventory",
         ("adapter_inventory",),
         ("adapter", "provenance", "source project"),
+    ),
+    ToolGroup(
+        "tooling",
+        "Tooling",
+        "tool structure and runtime inventory",
+        ("tool_structure",),
+        ("tools", "schema", "planner", "manual"),
     ),
 )
 

@@ -24,7 +24,7 @@ This is a showcase and starter skeleton, not a hosted SaaS product. It is design
 - Ollama-backed open-ended answers, benchmarking, and model-profile derivation require a running local Ollama service.
 - Browser sessions, settings, prompts, avatars, and UI memories live in browser local storage.
 - Backend memories, benchmark profiles, research sessions, event journals, logs, and tool stats live under ignored `state/` files.
-- The static web UI has no build step; validate browser changes with `node --check src/tooling_showcase/static/app.js` and manual smoke tests.
+- The static web UI has no build step; validate browser changes with `node --check` on each file under `src/tooling_showcase/static/*.js` and manual smoke tests.
 
 ## Linux Quick Start
 
@@ -210,6 +210,7 @@ The test suite covers:
 - adapters, retrieval/indexing, research-lab sessions, journal behavior, and service fallback paths
 - Ollama-compatible wrapper request shapes
 - static server and UI marker behavior
+- optional Playwright browser boot smoke for the DOM app
 
 Run all tests with:
 
@@ -220,8 +221,12 @@ pytest tests/
 Run the frontend syntax check with:
 
 ```bash
+node --check src/tooling_showcase/static/app-data.js
+node --check src/tooling_showcase/static/markdown.js
 node --check src/tooling_showcase/static/app.js
 ```
+
+The browser smoke test is `pytest tests/test_browser_smoke.py`. It skips when Playwright or its Chromium browser is not installed.
 
 ## Project Layout
 

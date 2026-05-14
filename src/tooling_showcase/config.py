@@ -26,6 +26,23 @@ class ShellPolicy:
     require_confirmation_for_risky: bool = True
     timeout_seconds: int = 30
     max_output_chars: int = 12000
+    blocked_executables: tuple[str, ...] = (
+        "sudo",
+        "mkfs",
+        "shutdown",
+        "reboot",
+    )
+    risky_executables: tuple[str, ...] = (
+        "rm",
+        "mv",
+        "cp",
+        "pkill",
+        "kill",
+    )
+    risky_git_subcommands: tuple[str, ...] = (
+        "clean",
+        "reset",
+    )
     blocked_substrings: tuple[str, ...] = (
         "sudo ",
         "rm -rf /",

@@ -29,6 +29,7 @@ tooling-showcase serve-ollama --host 0.0.0.0 --port 11436
 - `TOOLING_SHOWCASE_OLLAMA_TIMEOUT`: Ollama request timeout seconds, default `120`.
 - `TOOLING_SHOWCASE_OLLAMA_TEMPERATURE`: default model temperature, default `0.2`.
 - `TOOLING_SHOWCASE_OLLAMA_ENABLED`: set `false` to disable Ollama fallback.
+- `TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API`: set `1` to allow `/api/tool` on non-loopback binds. The `serve` command also supports `--enable-remote-tool-api`. Leave both unset unless the network is trusted.
 - `SHOWCASE_LIBRARY_PATHS`: colon-separated local EPUB/ZIM/library roots.
 
 ## Browser Local Storage
@@ -50,4 +51,4 @@ Legacy `v2` sessions, active session, memories, and system prompt are imported i
 
 ## Health Check
 
-Use `tooling-showcase doctor` after changing paths, installing from a wheel, moving the repo, or disabling Ollama.
+Use `tooling-showcase doctor` after changing paths, installing from a wheel, moving the repo, or disabling Ollama. It also warns when optional development tools such as `ruff`, `pytest`, `build`, or `playwright` are missing and suggests `pip install -e '.[dev]'`.

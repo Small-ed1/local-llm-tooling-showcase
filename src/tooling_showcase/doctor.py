@@ -4,12 +4,15 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen
+import importlib.util
 import json
 import shutil
 import sys
 
 from tooling_showcase import __version__
 from tooling_showcase.config import ShowcaseConfig
+
+DEV_INSTALL_HINT = "Install dev tools with: pip install -e '.[dev]'"
 
 
 def run_doctor(config: ShowcaseConfig, *, json_output: bool = False) -> int:
@@ -32,13 +35,17 @@ def collect_doctor_checks(config: ShowcaseConfig) -> list[dict[str, str]]:
     checks.append(_path_check("portfolio_root", config.portfolio_root, must_be_dir=True))
     static_dir = Path(__file__).with_name("static")
     checks.append(_path_check("static_ui", static_dir / "index.html"))
-    checks.append(_path_check("frontend_js", static_dir / "app.js"))
+    checks.append(_paths_check("frontend_js", [static_dir / "app-data.js", static_dir / "markdown.js", static_dir / "app.js"]))
     checks.append(_path_check("install_script", config.project_root / "install.sh", required=False))
     checks.append(_path_check("start_servers_script", config.project_root / "start-servers.sh", required=False))
     checks.append(_writable_parent_check("journal_parent", config.journal_path.parent))
     if config.benchmark_path is not None:
         checks.append(_writable_parent_check("benchmark_parent", config.benchmark_path.parent))
-    checks.append(_command_check("node", required=False))
+    checks.append(_command_check("node", required=False, hint="Install Node.js to run frontend checks."))
+    checks.append(_python_module_check("pytest", "pytest", required=False, hint=DEV_INSTALL_HINT))
+    checks.append(_command_check("ruff", required=False, hint=DEV_INSTALL_HINT))
+    checks.append(_python_module_check("build", "build", required=False, hint=DEV_INSTALL_HINT))
+    checks.append(_python_module_check("playwright", "playwright", required=False, hint=DEV_INSTALL_HINT))
     checks.append(_ollama_check(config))
     return checks
 
@@ -57,6 +64,14 @@ def _path_check(name: str, path: Path, *, must_be_dir: bool = False, required: b
     return {"name": name, "status": "ok" if exists else missing_status, "detail": str(path) if exists else f"missing: {path}"}
 
 
+def _paths_check(name: str, paths: list[Path], *, required: bool = True) -> dict[str, str]:
+    missing = [path for path in paths if not path.exists()]
+    missing_status = "error" if required else "warn"
+    if missing:
+        return {"name": name, "status": missing_status, "detail": "missing: " + ", ".join(str(path) for path in missing)}
+    return {"name": name, "status": "ok", "detail": ", ".join(str(path) for path in paths)}
+
+
 def _writable_parent_check(name: str, path: Path) -> dict[str, str]:
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -65,11 +80,24 @@ def _writable_parent_check(name: str, path: Path) -> dict[str, str]:
     return {"name": name, "status": "ok" if path.is_dir() else "error", "detail": str(path)}
 
 
-def _command_check(command: str, *, required: bool) -> dict[str, str]:
+def _command_check(command: str, *, required: bool, hint: str | None = None) -> dict[str, str]:
     found = shutil.which(command)
     if found:
         return {"name": command, "status": "ok", "detail": found}
-    return {"name": command, "status": "error" if required else "warn", "detail": f"{command} not found"}
+    detail = f"{command} not found"
+    if hint:
+        detail = f"{detail}; {hint}"
+    return {"name": command, "status": "error" if required else "warn", "detail": detail}
+
+
+def _python_module_check(name: str, module: str, *, required: bool, hint: str | None = None) -> dict[str, str]:
+    spec = importlib.util.find_spec(module)
+    if spec is not None:
+        return {"name": name, "status": "ok", "detail": spec.origin or "installed"}
+    detail = f"{module} module not found"
+    if hint:
+        detail = f"{detail}; {hint}"
+    return {"name": name, "status": "error" if required else "warn", "detail": detail}
 
 
 def _ollama_check(config: ShowcaseConfig) -> dict[str, str]:

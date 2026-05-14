@@ -21,24 +21,28 @@ These are the tools exposed by `tool_protocol.py`. `shell_command` is visible bu
 - `library_read_epub`
 - `library_read_zim`
 - `library_search`
+- `local_doc_search`
+- `local_doc_read`
 - `list_memories`
 - `load_memory`
 - `query_index`
 - `read_file`
 - `save_memory`
 - `shell_command` with confirmation rules
+- `tool_structure`
 - `tree_view`
 - `update_memory`
 - `web_search`
 
 ## Experimental Runtime Tools
 
-Everything else in `ToolRuntime.available_tools()` is available for manual/runtime experiments but should not be assumed planner-safe. Examples include file mutation, git mutation, optional audio/image/device tools, task helpers, indexing maintenance, and telemetry helpers.
+Everything else in `ToolRuntime.available_tools()` is available for manual/runtime experiments but should not be assumed planner-safe. Examples include file mutation, git mutation, optional audio/image/device tools, task helpers, indexing maintenance, telemetry helpers, and confirmation-gated documentation edits such as `local_doc_replace`.
 
 ## Safety Rules
 
-- Shell execution blocks known destructive patterns and requires confirmation for risky substrings.
+- Shell execution parses common command shapes, blocks known destructive command/argument patterns, requires confirmation for risky commands, and keeps raw-pattern checks as a fallback guardrail.
 - File write/delete/git mutation tools are intentionally not planner-visible by default.
+- `local_doc_search` and `local_doc_read` are planner-visible read-only documentation helpers; `local_doc_replace` is manual and confirmation-gated.
 - Memory tools should only store explicit, stable user preferences or facts. Do not store secrets.
 
 ## Adding A Tool

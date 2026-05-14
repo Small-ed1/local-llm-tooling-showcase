@@ -4,6 +4,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from ipaddress import ip_address
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse
@@ -11,145 +12,27 @@ from urllib.request import Request, urlopen
 import inspect
 import json
 import mimetypes
+import os
 
 from tooling_showcase.benchmarking import benchmark_profiles, default_benchmark_path, load_benchmark_results
 from tooling_showcase.catalog import tool_stability
 from tooling_showcase.models import ActionResult
 from tooling_showcase.research import ResearchLab
 from tooling_showcase.service import ShowcaseService
-
+from tooling_showcase.server_metadata import ADAPTER_USAGE, TOOL_DOCS
 
 STATIC_DIR = Path(__file__).with_name("static")
 
 
-TOOL_DOCS = {
-    "adapter_inventory": {
-        "name": "Adapter Inventory",
-        "safety": "read-only",
-        "summary": "Inspect which workspace projects are available as showcase adapters.",
-        "usage": "Use when comparing source projects, checking provenance, or explaining what the showcase can reach.",
-        "example": {},
-    },
-    "build_index": {
-        "name": "Index Builder",
-        "safety": "writes local state",
-        "summary": "Chunk local text files into a lightweight searchable index.",
-        "usage": "Run after repo changes or before repeated codebase questions.",
-        "example": {},
-    },
-    "content_search": {
-        "name": "Content Search",
-        "safety": "read-only",
-        "summary": "Search local file contents for matching snippets.",
-        "usage": "Use when locating symbols, strings, routes, prompts, or feature code.",
-        "example": {"query": "ToolRuntime"},
-    },
-    "draft_system_prompt": {
-        "name": "Draft System Prompt",
-        "safety": "read-only suggestion",
-        "summary": "Create a structured system-prompt draft for user review.",
-        "usage": "Use when the user wants guided creation of reusable assistant behavior.",
-        "example": {"title": "Coding assistant", "goal": "concise implementation help"},
-    },
-    "file_search": {
-        "name": "File Search",
-        "safety": "read-only",
-        "summary": "Find candidate files by filename.",
-        "usage": "Use before read_file when you know only part of the path.",
-        "example": {"query": "README"},
-    },
-    "library_info": {
-        "name": "Library Info",
-        "safety": "read-only",
-        "summary": "Inspect configured local library sources.",
-        "usage": "Use to verify EPUB/ZIM library availability.",
-        "example": {},
-    },
-    "library_read_epub": {
-        "name": "Read EPUB",
-        "safety": "read-only",
-        "summary": "Read a selected EPUB item or passage.",
-        "usage": "Use after library_search returns an item id.",
-        "example": {"id": "", "query": "", "max_chars": 12000},
-    },
-    "library_read_zim": {
-        "name": "Read ZIM",
-        "safety": "read-only",
-        "summary": "Read an article from a local ZIM archive.",
-        "usage": "Use for offline documentation or reference archives.",
-        "example": {"id": "", "title": ""},
-    },
-    "library_search": {
-        "name": "Library Search",
-        "safety": "read-only",
-        "summary": "Search the local library catalog.",
-        "usage": "Use before reading EPUB/ZIM content.",
-        "example": {"query": "local models", "limit": 10},
-    },
-    "query_index": {
-        "name": "Index Query",
-        "safety": "read-only",
-        "summary": "Search the built local index for relevant chunks.",
-        "usage": "Use for repo-level questions once build_index has populated the index.",
-        "example": {"query": "routing and tool catalog"},
-    },
-    "read_file": {
-        "name": "File Read",
-        "safety": "read-only",
-        "summary": "Read a local text file directly.",
-        "usage": "Use with an exact path discovered through file_search or tree_view.",
-        "example": {"path": "README.md"},
-    },
-    "shell_command": {
-        "name": "Shell Command",
-        "safety": "guarded",
-        "summary": "Run a shell command with blocked and confirm-required patterns.",
-        "usage": "Use for explicit inspection commands, tests, linting, git status, or safe scripts.",
-        "example": {"command": "git status"},
-    },
-    "tree_view": {
-        "name": "Tree View",
-        "safety": "read-only",
-        "summary": "Show a shallow project tree.",
-        "usage": "Use to understand folder layout before deeper reads.",
-        "example": {"path": ".", "max_depth": 4},
-    },
-    "web_search": {
-        "name": "Web Search",
-        "safety": "network",
-        "summary": "Run a simple public web lookup.",
-        "usage": "Use for documentation, current public info, or external references.",
-        "example": {"query": "Ollama structured outputs"},
-    },
-}
-
-
-ADAPTER_USAGE = {
-    "northstar": [
-        "Use as a reference for deterministic command routing before LLM fallback.",
-        "Compare its tool catalog style against this showcase's tool docs.",
-        "Borrow voice-assistant style routing ideas when adding new commands.",
-    ],
-    "ars": [
-        "Use as the heavier research-runtime reference.",
-        "Inspect model-role mappings when expanding routing beyond chat models.",
-        "Compare direct tool surfaces and retrieval/indexing structure.",
-    ],
-    "behavioral_os": [
-        "Use as a clean service-boundary reference.",
-        "Compare explicit route/action models against freeform chat glue.",
-        "Borrow result-shape discipline for UI event rendering.",
-    ],
-    "mini_arena": [
-        "Use as an event/state transition reference.",
-        "Compare structured actions and immutable journaling patterns.",
-        "Borrow pressure/resolver style event thinking when adding autonomous runs.",
-    ],
-}
-
-
-def run_server(service: ShowcaseService, host: str, port: int) -> int:
+def run_server(
+    service: ShowcaseService,
+    host: str,
+    port: int,
+    *,
+    enable_remote_tool_api: bool = False,
+) -> int:
     research_lab = ResearchLab(service)
+    manual_tool_api_enabled = _manual_tool_api_enabled(host, enable_remote_tool_api=enable_remote_tool_api)
 
     class Handler(BaseHTTPRequestHandler):
         def do_HEAD(self) -> None:  # noqa: N802
@@ -164,6 +47,11 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 self._send_static_file(STATIC_DIR / relative, head_only=True)
                 return
 
+            if clean_path == "/api/tool":
+                self.send_response(HTTPStatus.OK if manual_tool_api_enabled else HTTPStatus.FORBIDDEN)
+                self.end_headers()
+                return
+
             if clean_path in {
                 "/api/journal",
                 "/api/adapters",
@@ -172,7 +60,6 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 "/api/runtime",
                 "/api/research",
                 "/api/research/list",
-                "/api/tool",
                 "/api/journal/clear",
                 "/api/journal/delete",
             }:
@@ -200,7 +87,8 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
 
             if clean_path == "/api/tools":
                 tools = service.tools.available_tools()
-                self._send_json({"tools": tools, "tool_cards": _tool_cards(tools)})
+                structure = service.tools.tool_structure()
+                self._send_json({"tools": tools, "tool_cards": _tool_cards(tools), "tool_structure": structure.data or {}})
                 return
 
             if clean_path == "/api/models":
@@ -399,6 +287,10 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                 return
 
             if clean_path == "/api/tool":
+                if not manual_tool_api_enabled:
+                    self._send_json(_manual_tool_api_disabled_payload(host), status=HTTPStatus.FORBIDDEN)
+                    return
+
                 payload = self._read_json_body()
                 tool_name = str(payload.get("tool") or payload.get("name") or "").strip()
                 arguments = payload.get("arguments") or payload.get("args") or {}
@@ -592,6 +484,11 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
 
     server = ThreadingHTTPServer((host, port), Handler)
     print(f"Showcase UI available at http://{host}:{port}")
+    if not manual_tool_api_enabled:
+        print(
+            "Manual /api/tool is disabled on non-loopback hosts. "
+            "Pass --enable-remote-tool-api or set TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API=1 only for trusted networks."
+        )
 
     try:
         server.serve_forever()
@@ -1097,6 +994,35 @@ def _optional_string(value) -> str | None:
     return text or None
 
 
+def _is_loopback_host(host: str) -> bool:
+    text = str(host or "").strip().strip("[]").lower()
+    if text in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    if not text:
+        return False
+    try:
+        return ip_address(text).is_loopback
+    except ValueError:
+        return False
+
+
+def _manual_tool_api_enabled(host: str, *, enable_remote_tool_api: bool = False) -> bool:
+    if _is_loopback_host(host):
+        return True
+    if enable_remote_tool_api:
+        return True
+    return os.getenv("TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _manual_tool_api_disabled_payload(host: str) -> dict:
+    return {
+        "ok": False,
+        "error": "Manual tool execution is disabled for non-loopback server binds.",
+        "host": host,
+        "hint": "Use --host 127.0.0.1, or pass --enable-remote-tool-api or set TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API=1 only on a trusted network.",
+    }
+
+
 def _first(values):
     if not values:
         return None
@@ -1132,17 +1058,5 @@ def _chunk_text(text: str, max_chunk_size: int = 120) -> list[str]:
 def _html_page() -> str:
     index_path = STATIC_DIR / "index.html"
     if index_path.exists():
-        page = index_path.read_text(encoding="utf-8", errors="replace")
-    else:
-        page = "<!doctype html><html><body><h1>Local LLM Tooling Showcase</h1></body></html>"
-
-    legacy_test_markers = """
-<!-- legacy test markers:
-Local Assistant App
-id="tab-ask" id="tab-run" id="ask-chip" id="run-chip" id="preset"
-value="small_ed" value="mallow" id="prompt" id="system-prompt"
-id="stream-mode" id="max-steps" id="preset-list-buttons"
-id="inspector-tools" id="panel-assets" /api/tools /api/run
--->
-"""
-    return page + legacy_test_markers
+        return index_path.read_text(encoding="utf-8", errors="replace")
+    return "<!doctype html><html><body><h1>Local LLM Tooling Showcase</h1></body></html>"

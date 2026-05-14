@@ -23,6 +23,12 @@ run_if_yes() {
   fi
 }
 
+check_static_js() {
+  node --check src/tooling_showcase/static/app-data.js
+  node --check src/tooling_showcase/static/markdown.js
+  node --check src/tooling_showcase/static/app.js
+}
+
 pick_python() {
   local candidate
   for candidate in python3 python; do
@@ -60,7 +66,7 @@ run_if_yes "Install package with development tools?" "$PYTHON_BIN" -m pip instal
 run_if_yes "Run Python tests?" "$PYTHON_BIN" -m pytest tests/
 
 if command -v node >/dev/null 2>&1; then
-  run_if_yes "Run frontend JavaScript syntax check?" node --check src/tooling_showcase/static/app.js
+  run_if_yes "Run frontend JavaScript syntax check?" check_static_js
 else
   echo "Skipping JavaScript syntax check: node not found."
 fi

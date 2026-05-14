@@ -56,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve.add_argument("--port", type=int, default=8123)
     serve.add_argument("--workspace", default=None)
+    serve.add_argument(
+        "--enable-remote-tool-api",
+        action="store_true",
+        help="Allow /api/tool on non-loopback binds. Use only on trusted networks.",
+    )
     add_timeout_options(serve)
 
     wrapper = sub.add_parser(
@@ -145,7 +150,12 @@ def main() -> int:
         return run_tui(service)
 
     if args.command == "serve":
-        return run_server(service, host=args.host, port=args.port)
+        return run_server(
+            service,
+            host=args.host,
+            port=args.port,
+            enable_remote_tool_api=args.enable_remote_tool_api,
+        )
 
     if args.command == "serve-ollama":
         endpoint = args.ollama_endpoint or config.ollama.endpoint

@@ -1,0 +1,235 @@
+{
+  "adapter_inventory": {
+    "name": "Adapter Inventory",
+    "safety": "read-only",
+    "summary": "Inspect which workspace projects are available as showcase adapters.",
+    "usage": "Use when comparing source projects, checking provenance, or explaining what the showcase can reach.",
+    "example": {}
+  },
+  "build_index": {
+    "name": "Index Builder",
+    "safety": "writes local state",
+    "summary": "Chunk local text files into a lightweight searchable index.",
+    "usage": "Run after repo changes or before repeated codebase questions.",
+    "example": {}
+  },
+  "content_search": {
+    "name": "Content Search",
+    "safety": "read-only",
+    "summary": "Search local file contents for matching snippets.",
+    "usage": "Use when locating symbols, strings, routes, prompts, or feature code.",
+    "example": {
+      "query": "ToolRuntime"
+    }
+  },
+  "create_memory": {
+    "name": "Create Memory",
+    "safety": "local state",
+    "summary": "Store a user preference or stable fact by key.",
+    "usage": "Use only when the user explicitly asks the assistant to remember something.",
+    "example": {
+      "key": "style",
+      "value": "prefers concise answers"
+    }
+  },
+  "delete_memory": {
+    "name": "Delete Memory",
+    "safety": "local state",
+    "summary": "Forget a stored user memory by key.",
+    "usage": "Use when the user asks to forget or remove a remembered detail.",
+    "example": {
+      "key": "style"
+    }
+  },
+  "draft_system_prompt": {
+    "name": "Draft System Prompt",
+    "safety": "read-only suggestion",
+    "summary": "Create a structured system-prompt draft for user review.",
+    "usage": "Use when the user wants guided creation of reusable assistant behavior.",
+    "example": {
+      "title": "Coding assistant",
+      "goal": "concise implementation help",
+      "context": ""
+    }
+  },
+  "edit_memory": {
+    "name": "Edit Memory",
+    "safety": "local state",
+    "summary": "Replace a stored user memory value.",
+    "usage": "Use when the user corrects or changes a remembered detail.",
+    "example": {
+      "key": "style",
+      "value": "prefers detailed but direct answers"
+    }
+  },
+  "file_search": {
+    "name": "File Search",
+    "safety": "read-only",
+    "summary": "Find candidate files by filename.",
+    "usage": "Use before read_file when you know only part of the path.",
+    "example": {
+      "query": "README"
+    }
+  },
+  "git_status": {
+    "name": "Git Status",
+    "safety": "read-only",
+    "summary": "Show the current git working tree status.",
+    "usage": "Use before commits, release checks, or when reviewing local changes.",
+    "example": {}
+  },
+  "library_info": {
+    "name": "Library Info",
+    "safety": "read-only",
+    "summary": "Inspect configured local library sources.",
+    "usage": "Use to verify EPUB/ZIM library availability.",
+    "example": {}
+  },
+  "library_read_epub": {
+    "name": "Read EPUB",
+    "safety": "read-only",
+    "summary": "Read a selected EPUB item or passage.",
+    "usage": "Use after library_search returns an item id.",
+    "example": {
+      "id": "",
+      "query": "",
+      "max_chars": 12000
+    }
+  },
+  "library_read_zim": {
+    "name": "Read ZIM",
+    "safety": "read-only",
+    "summary": "Read an article from a local ZIM archive.",
+    "usage": "Use for offline documentation or reference archives.",
+    "example": {
+      "id": "",
+      "title": ""
+    }
+  },
+  "library_search": {
+    "name": "Library Search",
+    "safety": "read-only",
+    "summary": "Search the local library catalog.",
+    "usage": "Use before reading EPUB/ZIM content.",
+    "example": {
+      "query": "local models",
+      "limit": 10
+    }
+  },
+  "list_memories": {
+    "name": "List Memories",
+    "safety": "local state",
+    "summary": "Show stored memory keys and values.",
+    "usage": "Use before loading, editing, or deleting a memory when the key is unknown.",
+    "example": {}
+  },
+  "load_memory": {
+    "name": "Load Memory",
+    "safety": "local state",
+    "summary": "Read one stored memory by key.",
+    "usage": "Use when a known preference or personal detail is relevant.",
+    "example": {
+      "key": "style"
+    }
+  },
+  "local_doc_paths": {
+    "name": "Local Doc Paths",
+    "safety": "read-only",
+    "summary": "List local documentation files in the workspace.",
+    "usage": "Use before local_doc_read when you need documentation file candidates.",
+    "example": {}
+  },
+  "local_doc_read": {
+    "name": "Local Doc Read",
+    "safety": "read-only",
+    "summary": "Read a local documentation file.",
+    "usage": "Use with a path returned by local_doc_search or local_doc_paths.",
+    "example": {
+      "path": "docs/TOOLS.md"
+    }
+  },
+  "local_doc_replace": {
+    "name": "Local Doc Replace",
+    "safety": "confirmation-gated write",
+    "summary": "Replace text in a local documentation file.",
+    "usage": "Use for explicit documentation edits after the old and new text are known.",
+    "example": {
+      "path": "docs/TOOLS.md",
+      "old": "old text",
+      "new": "new text"
+    }
+  },
+  "local_doc_search": {
+    "name": "Local Doc Search",
+    "safety": "read-only",
+    "summary": "Search README, root docs, and files under docs/.",
+    "usage": "Use before web search when the question is about this project or local documentation.",
+    "example": {
+      "query": "release checks",
+      "limit": 10
+    }
+  },
+  "query_index": {
+    "name": "Index Query",
+    "safety": "read-only",
+    "summary": "Search the built local index for relevant chunks.",
+    "usage": "Use for repo-level questions once build_index has populated the index.",
+    "example": {
+      "query": "routing and tool catalog"
+    }
+  },
+  "read_file": {
+    "name": "File Read",
+    "safety": "read-only",
+    "summary": "Read a local text file directly.",
+    "usage": "Use with an exact path discovered through file_search or tree_view.",
+    "example": {
+      "path": "README.md"
+    }
+  },
+  "save_memory": {
+    "name": "Save Memory",
+    "safety": "local state",
+    "summary": "Store a user preference or stable fact by key.",
+    "usage": "Use only for explicit remember/store requests.",
+    "example": {
+      "key": "style",
+      "value": "prefers concise answers"
+    }
+  },
+  "shell_command": {
+    "name": "Shell Command",
+    "safety": "guarded",
+    "summary": "Run a shell command with blocked and confirm-required patterns.",
+    "usage": "Use for explicit inspection commands, tests, linting, git status, or safe scripts.",
+    "example": {
+      "command": "git status"
+    }
+  },
+  "tool_structure": {
+    "name": "Tool Structure",
+    "safety": "read-only",
+    "summary": "Inspect runtime tool groups, aliases, planner-visible tools, and manual-only tools.",
+    "usage": "Use when deciding which tool family is appropriate.",
+    "example": {}
+  },
+  "tree_view": {
+    "name": "Tree View",
+    "safety": "read-only",
+    "summary": "Show a shallow project tree.",
+    "usage": "Use to understand folder layout before deeper reads.",
+    "example": {
+      "path": ".",
+      "max_depth": 4
+    }
+  },
+  "web_search": {
+    "name": "Web Search",
+    "safety": "network",
+    "summary": "Run a simple public web lookup.",
+    "usage": "Use for documentation, current public info, or external references.",
+    "example": {
+      "query": "Ollama structured outputs"
+    }
+  }
+}

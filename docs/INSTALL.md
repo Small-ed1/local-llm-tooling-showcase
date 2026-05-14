@@ -27,8 +27,12 @@ python -m venv .venv
 pip install -e '.[dev]'
 tooling-showcase doctor
 pytest tests/
+node --check src/tooling_showcase/static/app-data.js
+node --check src/tooling_showcase/static/markdown.js
 node --check src/tooling_showcase/static/app.js
 ```
+
+`pytest tests/test_browser_smoke.py` runs an optional Playwright boot check for the DOM app and skips when Playwright Chromium is not installed.
 
 Manual Windows setup:
 
@@ -82,6 +86,8 @@ From a fresh clone, the release gate is:
 pip install -e '.[dev]'
 tooling-showcase doctor
 git diff --check
+node --check src/tooling_showcase/static/app-data.js
+node --check src/tooling_showcase/static/markdown.js
 node --check src/tooling_showcase/static/app.js
 python -m compileall -q src tests
 bash -n install.sh && bash -n start-servers.sh

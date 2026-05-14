@@ -62,3 +62,5 @@ def test_memory_tools_are_planner_visible(tmp_path: Path):
     )
     visible = {schema["name"] for schema in visible_tool_schemas(runtime.available_tools())}
     assert {"create_memory", "edit_memory", "delete_memory", "list_memories", "load_memory"} <= visible
+    assert {"tool_structure", "local_doc_search", "local_doc_read"} <= visible
+    assert "local_doc_replace" not in visible

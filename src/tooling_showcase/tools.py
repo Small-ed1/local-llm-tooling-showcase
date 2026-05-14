@@ -7,11 +7,13 @@ from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 from urllib.request import Request, urlopen
 import inspect
 import json
+import shlex
 import subprocess
 from threading import RLock
 
 from tooling_showcase.adapters import WorkspaceAdapters
-from tooling_showcase.config import ShowcaseConfig
+from tooling_showcase.catalog import TOOL_DOC_BY_ID, TOOL_GROUPS
+from tooling_showcase.config import ShellPolicy, ShowcaseConfig
 from tooling_showcase.library_tools import LocalLibrary
 from tooling_showcase.models import ToolCall
 from tooling_showcase.retrieval import (
@@ -39,34 +41,247 @@ TEXT_EXTENSIONS = {
     ".sh",
 }
 
+DOC_EXTENSIONS = {".md", ".rst", ".txt", ".adoc"}
+DOC_ROOT_FILES = {
+    "README.md",
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "SAFETY.md",
+    "SECURITY.md",
+}
+WEB_FETCH_MAX_BYTES = 1_000_000
+WEB_FETCH_MAX_CHARS = 12_000
+SHELL_CONTROL_TOKENS = {";", "&&", "||", "|", "|&", "&", "(", ")"}
+
+
+def _shell_policy_findings(command: str, policy: ShellPolicy) -> tuple[list[str], list[str]]:
+    blocked: list[str] = []
+    risky: list[str] = []
+    tokens, parsed = _shell_tokens(command)
+
+    if parsed:
+        for redirect, target in _shell_redirect_targets(tokens):
+            risky.append(f"redirect:{redirect}")
+            if target and _is_dev_disk_path(target):
+                blocked.append("redirect:/dev/sd")
+        for segment in _shell_command_segments(tokens):
+            _inspect_shell_segment(segment, policy, blocked, risky)
+    else:
+        risky.append("unparsed shell syntax")
+
+    normalized = f" {command.strip()} "
+    blocked.extend(f"raw:{token.strip() or token}" for token in policy.blocked_substrings if token in normalized)
+    if not parsed:
+        risky.extend(f"raw:{token.strip() or token}" for token in policy.risky_substrings if token in normalized)
+    return _dedupe(blocked), _dedupe(risky)
+
+
+def _shell_tokens(command: str) -> tuple[list[str], bool]:
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        return list(lexer), True
+    except ValueError:
+        return [], False
+
+
+def _shell_redirect_targets(tokens: list[str]) -> list[tuple[str, str | None]]:
+    redirects: list[tuple[str, str | None]] = []
+    for index, token in enumerate(tokens):
+        if _is_redirect_token(token):
+            target = tokens[index + 1] if index + 1 < len(tokens) else None
+            redirects.append((token, target))
+    return redirects
+
+
+def _shell_command_segments(tokens: list[str]) -> list[list[str]]:
+    segments: list[list[str]] = []
+    current: list[str] = []
+    skip_next = False
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if _is_control_token(token):
+            if current:
+                segments.append(current)
+                current = []
+            continue
+        if _is_redirect_token(token):
+            skip_next = True
+            continue
+        current.append(token)
+    if current:
+        segments.append(current)
+    return segments
+
+
+def _inspect_shell_segment(segment: list[str], policy: ShellPolicy, blocked: list[str], risky: list[str]) -> None:
+    executable, args = _extract_executable(segment)
+    if not executable:
+        return
+    if executable in policy.blocked_executables:
+        blocked.append(f"exec:{executable}")
+    if executable in policy.risky_executables:
+        risky.append(f"exec:{executable}")
+    if executable == "git":
+        subcommand = _git_subcommand(args)
+        if subcommand in policy.risky_git_subcommands:
+            risky.append(f"git:{subcommand}")
+    if executable == "rm" and _rm_recursive_force_root(args):
+        blocked.append("args:rm -rf /")
+    if executable == "chmod" and _chmod_recursive_777_root(args):
+        blocked.append("args:chmod -R 777 /")
+    if executable == "dd" and any(arg.startswith("if=") or arg.startswith("of=/dev/sd") for arg in args):
+        blocked.append("args:dd if=/of=/dev/sd")
+
+
+def _extract_executable(segment: list[str]) -> tuple[str | None, list[str]]:
+    index = 0
+    while index < len(segment) and _is_assignment(segment[index]):
+        index += 1
+    if index < len(segment) and segment[index] in {"command", "exec"}:
+        index += 1
+    if index < len(segment) and segment[index] == "env":
+        index += 1
+        while index < len(segment) and (_is_assignment(segment[index]) or segment[index].startswith("-")):
+            index += 1
+    if index >= len(segment):
+        return None, []
+    executable = Path(segment[index]).name.lower()
+    return executable, segment[index + 1 :]
+
+
+def _git_subcommand(args: list[str]) -> str | None:
+    index = 0
+    value_options = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
+    while index < len(args):
+        arg = args[index]
+        if arg in value_options:
+            index += 2
+            continue
+        if arg.startswith("-"):
+            index += 1
+            continue
+        return arg.lower()
+    return None
+
+
+def _rm_recursive_force_root(args: list[str]) -> bool:
+    recursive = False
+    force = False
+    targets: list[str] = []
+    option_mode = True
+    for arg in args:
+        if option_mode and arg == "--":
+            option_mode = False
+            continue
+        if option_mode and arg.startswith("--"):
+            recursive = recursive or arg == "--recursive"
+            force = force or arg == "--force"
+            continue
+        if option_mode and arg.startswith("-") and len(arg) > 1:
+            flags = arg.lstrip("-")
+            recursive = recursive or "r" in flags or "R" in flags
+            force = force or "f" in flags
+            continue
+        option_mode = False
+        targets.append(arg)
+    return recursive and force and any(_is_root_path_arg(target) for target in targets)
+
+
+def _chmod_recursive_777_root(args: list[str]) -> bool:
+    recursive = False
+    mode_seen = False
+    targets: list[str] = []
+    for arg in args:
+        if arg.startswith("-"):
+            flags = arg.lstrip("-")
+            recursive = recursive or "R" in flags or arg == "--recursive"
+            continue
+        if not mode_seen:
+            mode_seen = arg == "777"
+            continue
+        targets.append(arg)
+    return recursive and mode_seen and any(_is_root_path_arg(target) for target in targets)
+
+
+def _is_assignment(token: str) -> bool:
+    if "=" not in token or token.startswith("="):
+        return False
+    name = token.split("=", 1)[0]
+    return name.replace("_", "a").isalnum() and not name[0].isdigit()
+
+
+def _is_control_token(token: str) -> bool:
+    return token in SHELL_CONTROL_TOKENS
+
+
+def _is_redirect_token(token: str) -> bool:
+    if token in {">", ">>", "<", "<<", "<<<", "<>", "&>", "&>>"}:
+        return True
+    return token.endswith(">") and token.rstrip(">").isdigit()
+
+
+def _is_root_path_arg(token: str) -> bool:
+    return token.strip() in {"/", "//"}
+
+
+def _is_dev_disk_path(token: str) -> bool:
+    return token.strip().startswith("/dev/sd")
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
 
 class _DuckDuckGoParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
-        self._in_result = False
-        self._href: str | None = None
-        self._title_parts: list[str] = []
+        self._current_result: dict[str, str] | None = None
+        self._capture: str | None = None
+        self._parts: list[str] = []
         self.results: list[dict[str, str]] = []
 
     def handle_starttag(self, tag: str, attrs):
         attr_map = dict(attrs)
-        if tag == "a" and attr_map.get("class") == "result__a":
-            self._in_result = True
-            self._href = attr_map.get("href")
-            self._title_parts = []
+        classes = set(str(attr_map.get("class", "")).split())
+        if tag == "a" and "result__a" in classes:
+            self._current_result = {"title": "", "url": attr_map.get("href", ""), "snippet": ""}
+            self.results.append(self._current_result)
+            self._capture = "title"
+            self._parts = []
+            return
+        if self._current_result is not None and "result__snippet" in classes:
+            self._capture = "snippet"
+            self._parts = []
 
     def handle_data(self, data: str):
-        if self._in_result:
-            self._title_parts.append(data)
+        if self._capture:
+            self._parts.append(data)
 
     def handle_endtag(self, tag: str):
-        if tag == "a" and self._in_result:
-            title = " ".join(part.strip() for part in self._title_parts if part.strip())
-            if title and self._href:
-                self.results.append({"title": title, "url": self._href})
-            self._in_result = False
-            self._href = None
-            self._title_parts = []
+        if self._current_result is None or self._capture is None:
+            return
+        if self._capture == "title" and tag == "a":
+            self._current_result["title"] = " ".join(part.strip() for part in self._parts if part.strip())
+            self._capture = None
+            self._parts = []
+        elif self._capture == "snippet" and tag in {"div", "span", "td"}:
+            snippet = " ".join(part.strip() for part in self._parts if part.strip())
+            if snippet:
+                self._current_result["snippet"] = snippet
+            self._capture = None
+            self._parts = []
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -212,6 +427,10 @@ class ToolRuntime:
             "library_read_epub",
             "library_read_zim",
             "library_search",
+            "local_doc_paths",
+            "local_doc_read",
+            "local_doc_replace",
+            "local_doc_search",
             "lint_code",
             "list_directory",
             "list_indexed_sources",
@@ -246,6 +465,7 @@ class ToolRuntime:
             "system_info",
             "task_checkpoint",
             "text_to_speech",
+            "tool_structure",
             "tree_view",
             "trace_step",
             "transcribe_audio",
@@ -259,6 +479,61 @@ class ToolRuntime:
     def _now(self) -> str:
         from datetime import datetime, timezone
         return datetime.now(timezone.utc).isoformat()
+
+    def tool_structure(self) -> ToolCall:
+        from tooling_showcase.tool_protocol import TOOL_SCHEMAS
+
+        available = self.available_tools()
+        available_set = set(available)
+        group_by_tool = {tool_id: group.group_id for group in TOOL_GROUPS for tool_id in group.tool_ids}
+        grouped: dict[str, list[str]] = {group.group_id: [] for group in TOOL_GROUPS}
+        for tool in available:
+            grouped.setdefault(group_by_tool.get(tool, "runtime"), []).append(tool)
+
+        tools = []
+        for tool in available:
+            doc = TOOL_DOC_BY_ID.get(tool)
+            schema = TOOL_SCHEMAS.get(tool)
+            tools.append(
+                {
+                    "id": tool,
+                    "group": group_by_tool.get(tool, "runtime"),
+                    "planner_visible": schema is not None,
+                    "safe_auto_run": bool(schema and schema.get("safe_auto_run")),
+                    "summary": doc.compact if doc else "Runtime tool exposed by ToolRuntime.",
+                    "aliases": sorted(alias for alias, target in self.aliases.items() if target == tool),
+                }
+            )
+
+        groups = [
+            {
+                "id": group.group_id,
+                "name": group.name,
+                "summary": group.compact,
+                "tools": [tool for tool in group.tool_ids if tool in available_set],
+            }
+            for group in TOOL_GROUPS
+            if any(tool in available_set for tool in group.tool_ids)
+        ]
+        if grouped.get("runtime"):
+            groups.append(
+                {
+                    "id": "runtime",
+                    "name": "Runtime",
+                    "summary": "Runtime-only tools without catalog grouping.",
+                    "tools": grouped["runtime"],
+                }
+            )
+
+        data = {
+            "tools": tools,
+            "groups": groups,
+            "aliases": dict(self.aliases),
+            "planner_visible": sorted(name for name in available if name in TOOL_SCHEMAS),
+            "manual_only": sorted(name for name in available if name not in TOOL_SCHEMAS),
+        }
+        summary = "\n".join(f"- {group['name']}: {len(group['tools'])} tool(s)" for group in groups)
+        return ToolCall("tool_structure", True, summary, data)
 
     def file_search(self, query: str) -> ToolCall:
         matches: list[str] = []
@@ -400,13 +675,15 @@ class ToolRuntime:
                 return unquote(target)
         return normalized
 
+    def _normalize_http_url(self, url: str) -> tuple[str | None, str | None]:
+        normalized = self._normalize_search_url(str(url or "").strip())
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return None, "Only absolute http:// and https:// URLs are supported."
+        return normalized, None
+
     def shell_command(self, command: str, confirm: bool = False) -> ToolCall:
-        normalized = f" {command.strip()} "
-        blocked = [
-            token
-            for token in self.config.shell_policy.blocked_substrings
-            if token in normalized
-        ]
+        blocked, risky = _shell_policy_findings(command, self.config.shell_policy)
         if blocked:
             return ToolCall(
                 tool_name="shell_command",
@@ -414,11 +691,6 @@ class ToolRuntime:
                 summary="Blocked shell command by safety policy.",
                 data={"command": command, "blocked": blocked},
             )
-        risky = [
-            token
-            for token in self.config.shell_policy.risky_substrings
-            if token in normalized
-        ]
         if (
             risky
             and self.config.shell_policy.require_confirmation_for_risky
@@ -575,6 +847,9 @@ class ToolRuntime:
             token in lowered
             for token in ("docs", "documentation", "ollama", "tool calling")
         ):
+            local_docs = self.local_doc_search(text, limit=5)
+            if local_docs.ok:
+                calls.append(local_docs)
             calls.append(self.web_search(text))
         if any(
             token in lowered
@@ -629,6 +904,35 @@ class ToolRuntime:
         candidate = Path(raw)
         resolved = candidate.resolve() if candidate.is_absolute() else (self.config.workspace_root / candidate).resolve()
         return resolved if self._allowed(resolved) else None
+
+    def _relative_path(self, path: Path) -> str:
+        try:
+            return str(path.relative_to(self.config.workspace_root))
+        except ValueError:
+            return str(path)
+
+    def _iter_local_doc_paths(self) -> list[Path]:
+        root = self.config.workspace_root
+        paths: list[Path] = []
+        for name in DOC_ROOT_FILES:
+            path = root / name
+            if path.is_file():
+                paths.append(path.resolve())
+        docs_dir = root / "docs"
+        if docs_dir.is_dir():
+            for path in docs_dir.rglob("*"):
+                if path.is_file() and self._is_local_doc_path(path.resolve()):
+                    paths.append(path.resolve())
+        return sorted(dict.fromkeys(paths), key=lambda item: self._relative_path(item).lower())
+
+    def _is_local_doc_path(self, path: Path) -> bool:
+        resolved = path.resolve()
+        if not self._allowed(resolved):
+            return False
+        if resolved.name in DOC_ROOT_FILES:
+            return True
+        docs_dir = (self.config.workspace_root / "docs").resolve()
+        return docs_dir in resolved.parents and resolved.suffix.lower() in DOC_EXTENSIONS
 
     def _load_json(self, path: Path, default):
         if not path.exists():
@@ -714,6 +1018,82 @@ class ToolRuntime:
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dst))
         return ToolCall("move_file", True, f"Moved {source} to {destination}")
+
+    def local_doc_paths(self, limit: int = 200) -> ToolCall:
+        paths = [self._relative_path(path) for path in self._iter_local_doc_paths()[: max(1, min(int(limit), 500))]]
+        return ToolCall(
+            "local_doc_paths",
+            True,
+            "\n".join(paths) if paths else "No local documentation files found.",
+            {"paths": paths, "count": len(paths)},
+        )
+
+    def local_doc_search(self, query: str = "", limit: int = 20) -> ToolCall:
+        query_text = str(query or "").strip().lower()
+        max_results = max(1, min(int(limit), 100))
+        results: list[dict] = []
+        for path in self._iter_local_doc_paths():
+            relative = self._relative_path(path)
+            if not query_text:
+                results.append({"path": relative})
+            else:
+                try:
+                    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+                except OSError:
+                    continue
+                for line_number, line in enumerate(lines, start=1):
+                    if query_text in line.lower():
+                        results.append({"path": relative, "line": line_number, "snippet": line.strip()[:300]})
+                        break
+            if len(results) >= max_results:
+                break
+        if not results:
+            return ToolCall("local_doc_search", False, f"No local documentation matches found for: {query}")
+        summary = "\n".join(
+            f"- {item['path']}{':' + str(item['line']) if item.get('line') else ''} {item.get('snippet', '')}".rstrip()
+            for item in results
+        )
+        return ToolCall("local_doc_search", True, summary, {"query": query, "results": results, "count": len(results)})
+
+    def local_doc_read(self, path: str, max_chars: int = 12000) -> ToolCall:
+        target = self._workspace_path(path)
+        if target is None or not target.exists() or not target.is_file() or not self._is_local_doc_path(target):
+            return ToolCall("local_doc_read", False, f"Documentation file not found or not allowed: {path}")
+        text = target.read_text(encoding="utf-8", errors="replace")
+        limit = max(1, min(int(max_chars), 50000))
+        truncated = len(text) > limit
+        return ToolCall(
+            "local_doc_read",
+            True,
+            text[:limit] + ("\n... [truncated]" if truncated else ""),
+            {"path": self._relative_path(target), "chars": len(text), "truncated": truncated},
+        )
+
+    def local_doc_replace(
+        self,
+        path: str,
+        old: str,
+        new: str,
+        *,
+        confirm: bool = False,
+        replace_all: bool = False,
+    ) -> ToolCall:
+        if not confirm:
+            return ToolCall("local_doc_replace", False, "Confirmation required for local documentation edits.")
+        target = self._workspace_path(path)
+        if target is None or not target.exists() or not target.is_file() or not self._is_local_doc_path(target):
+            return ToolCall("local_doc_replace", False, f"Documentation file not found or not allowed: {path}")
+        text = target.read_text(encoding="utf-8", errors="replace")
+        if old not in text:
+            return ToolCall("local_doc_replace", False, "Old text not found in documentation file.")
+        count = text.count(old) if replace_all else 1
+        target.write_text(text.replace(old, new, -1 if replace_all else 1), encoding="utf-8", newline="\n")
+        return ToolCall(
+            "local_doc_replace",
+            True,
+            f"Updated {self._relative_path(target)} ({count} replacement{'s' if count != 1 else ''}).",
+            {"path": self._relative_path(target), "replacements": count},
+        )
 
     def list_directory(self, path: str = ".") -> ToolCall:
         root = self._workspace_path(path)
@@ -1030,13 +1410,48 @@ class ToolRuntime:
     def git_stash(self) -> ToolCall:
         return self._git(["stash", "push", "-m", "tooling-showcase stash"])
 
-    def fetch_url(self, url: str, confirm: bool = False) -> ToolCall:
+    def fetch_url(
+        self,
+        url: str,
+        confirm: bool = False,
+        max_chars: int = WEB_FETCH_MAX_CHARS,
+        max_bytes: int = WEB_FETCH_MAX_BYTES,
+    ) -> ToolCall:
+        normalized_url, error = self._normalize_http_url(url)
+        if error or normalized_url is None:
+            return ToolCall("fetch_url", False, error or "Invalid URL.", {"url": url})
+        byte_limit = max(1, min(int(max_bytes), WEB_FETCH_MAX_BYTES))
+        char_limit = max(1, min(int(max_chars), 200_000))
         try:
-            with urlopen(Request(url, headers={"User-Agent": "tooling-showcase/0.1"}), timeout=20) as response:
-                text = response.read().decode("utf-8", errors="replace")
+            request = Request(
+                normalized_url,
+                headers={
+                    "User-Agent": "tooling-showcase/1.0 (+local-first assistant runtime)",
+                    "Accept": "text/html,application/json,text/plain,*/*;q=0.8",
+                },
+            )
+            with urlopen(request, timeout=20) as response:
+                raw = response.read(byte_limit + 1)
+                byte_truncated = len(raw) > byte_limit
+                raw = raw[:byte_limit]
+                content_type = response.headers.get("Content-Type", "")
+                charset = response.headers.get_content_charset() or "utf-8"
+                text = raw.decode(charset, errors="replace")
+                char_truncated = len(text) > char_limit
+                summary = text[:char_limit]
+                data = {
+                    "url": normalized_url,
+                    "final_url": response.geturl(),
+                    "status": getattr(response, "status", None),
+                    "content_type": content_type,
+                    "charset": charset,
+                    "bytes": len(raw),
+                    "truncated": byte_truncated or char_truncated,
+                    "text": summary,
+                }
         except Exception as exc:
-            return ToolCall("fetch_url", False, f"Fetch failed: {exc}", {"url": url})
-        return ToolCall("fetch_url", True, text[:12000], {"url": url})
+            return ToolCall("fetch_url", False, f"Fetch failed: {exc}", {"url": normalized_url})
+        return ToolCall("fetch_url", True, summary, data)
 
     def extract_webpage_content(self, url: str | None = None, query: str | None = None) -> ToolCall:
         if not url:
@@ -1050,14 +1465,15 @@ class ToolRuntime:
         fetched = self.fetch_url(url, confirm=confirm)
         if not fetched.ok:
             return fetched
+        text = str((fetched.data or {}).get("text") or fetched.summary)
         try:
-            data = json.loads(fetched.summary)
+            data = json.loads(text)
         except json.JSONDecodeError as exc:
             return ToolCall("parse_json_api", False, f"Invalid JSON: {exc}")
         return ToolCall("parse_json_api", True, "json ok", data)
 
     def download_file(self, url: str, destination: str) -> ToolCall:
-        fetched = self.fetch_url(url)
+        fetched = self.fetch_url(url, max_chars=200_000, max_bytes=200_000)
         if not fetched.ok:
             return fetched
         return self.write_file(destination, fetched.summary)
@@ -1069,7 +1485,9 @@ class ToolRuntime:
         return ToolCall("screenshot_page", False, "Screenshot capture is not available in the stdlib runtime.")
 
     def web_search(self, query: str, confirm: bool = False) -> ToolCall:
-        api_url = f"https://api.duckduckgo.com/?q={quote_plus(query)}&format=json&no_redirect=1&no_html=1"
+        original_query = str(query or "").strip()
+        search_query = self._web_search_query_for_context(original_query)
+        api_url = f"https://api.duckduckgo.com/?q={quote_plus(search_query)}&format=json&no_redirect=1&no_html=1"
         api = self.fetch_url(api_url, confirm=confirm)
         if api.ok:
             try:
@@ -1079,25 +1497,71 @@ class ToolRuntime:
             lines = []
             if payload.get("AbstractText"):
                 lines.append(str(payload["AbstractText"]))
-            for topic in payload.get("RelatedTopics", [])[:5]:
-                if isinstance(topic, dict) and topic.get("Text"):
-                    lines.append(str(topic["Text"]))
+            related = self._duckduckgo_related_results(payload.get("RelatedTopics", []))
+            for topic in related[:5]:
+                if topic.get("title"):
+                    suffix = f" ({topic['url']})" if topic.get("url") else ""
+                    lines.append(f"{topic['title']}{suffix}")
             if lines:
-                return ToolCall("web_search", True, "\n".join(lines), {"query": query, "results": payload.get("RelatedTopics", [])})
+                return ToolCall(
+                    "web_search",
+                    True,
+                    "\n".join(lines),
+                    {"query": original_query, "search_query": search_query, "results": related[:8]},
+                )
 
-        html_url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
+        html_url = f"https://duckduckgo.com/html/?q={quote_plus(search_query)}"
         html = self.fetch_url(html_url, confirm=confirm)
         if not html.ok:
             return ToolCall("web_search", False, html.summary)
         parser = _DuckDuckGoParser()
         parser.feed(html.summary)
-        ranked = self._rank_search_results(query, parser.results[:8])
-        rows = [f"- {item.get('title', '')}\n  {item.get('url', '')}" for item in ranked[:5]]
-        return ToolCall("web_search", True, "\n".join(rows) if rows else "No results parsed.", {"query": query, "results": ranked[:5], "count": len(ranked[:5])})
+        parsed_results = [
+            {**item, "url": self._normalize_search_url(item.get("url", ""))}
+            for item in parser.results
+            if item.get("title") and item.get("url")
+        ]
+        ranked = self._rank_search_results(search_query, parsed_results[:10])
+        rows = []
+        for item in ranked[:5]:
+            row = f"- {item.get('title', '')}\n  {item.get('url', '')}"
+            if item.get("snippet"):
+                row += f"\n  {item.get('snippet')}"
+            rows.append(row)
+        return ToolCall(
+            "web_search",
+            True,
+            "\n".join(rows) if rows else "No results parsed.",
+            {"query": original_query, "search_query": search_query, "results": ranked[:5], "count": len(ranked[:5])},
+        )
+
+    def _duckduckgo_related_results(self, topics) -> list[dict[str, str]]:
+        results: list[dict[str, str]] = []
+        for topic in topics or []:
+            if not isinstance(topic, dict):
+                continue
+            if isinstance(topic.get("Topics"), list):
+                results.extend(self._duckduckgo_related_results(topic["Topics"]))
+                continue
+            title = str(topic.get("Text") or topic.get("Name") or "").strip()
+            url = str(topic.get("FirstURL") or topic.get("url") or "").strip()
+            if title or url:
+                results.append({"title": title or url, "url": self._normalize_search_url(url) if url else "", "snippet": title})
+        return results
 
     def _rank_search_results(self, query: str, results: list[dict]) -> list[dict]:
         query_lower = query.lower()
-        official_hosts = ("kernel.org", "docs.python.org", "github.com", "aylur.github.io", "wiki.archlinux.org")
+        official_hosts = (
+            "kernel.org",
+            "docs.python.org",
+            "github.com",
+            "developer.mozilla.org",
+            "docs.rs",
+            "pkg.go.dev",
+            "nodejs.org",
+            "aylur.github.io",
+            "wiki.archlinux.org",
+        )
 
         def score(item: dict) -> int:
             url = str(item.get("url", "")).lower()

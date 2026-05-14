@@ -17,6 +17,16 @@ def test_lan_binding_requires_explicit_host():
     serve = parser.parse_args(["serve", "--host", "0.0.0.0"])
 
     assert serve.host == "0.0.0.0"
+    assert serve.enable_remote_tool_api is False
+
+
+def test_serve_supports_remote_tool_api_opt_in():
+    parser = build_parser()
+
+    serve = parser.parse_args(["serve", "--host", "0.0.0.0", "--enable-remote-tool-api"])
+
+    assert serve.host == "0.0.0.0"
+    assert serve.enable_remote_tool_api is True
 
 
 def test_doctor_command_supports_json_output():

@@ -11,6 +11,8 @@ Manual release flow:
 ```bash
 git status --short
 git diff --check
+node --check src/tooling_showcase/static/app-data.js
+node --check src/tooling_showcase/static/markdown.js
 node --check src/tooling_showcase/static/app.js
 python -m compileall -q src tests
 bash -n install.sh && bash -n start-servers.sh

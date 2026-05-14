@@ -7,12 +7,14 @@ This project is a local-first assistant runtime. It can inspect files, call tool
 - `tooling-showcase serve` and `tooling-showcase serve-ollama` default to `127.0.0.1`.
 - Use `--host 0.0.0.0` only when you intentionally want LAN access.
 - Treat LAN binding as exposing local chat, tool metadata, and runtime endpoints to other devices on the network.
+- The direct manual tool runner at `/api/tool` is disabled by default on non-loopback binds. Pass `--enable-remote-tool-api` or set `TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API=1` only on a trusted network when you intentionally need remote manual tool execution.
 
 ## Tool Boundaries
 
 - The model planner only sees schemas in `src/tooling_showcase/tool_protocol.py`.
 - Adding a method to `ToolRuntime` does not expose it to the planner unless a schema is added.
-- Shell commands are confirmation-gated for risky patterns and blocked for known destructive patterns.
+- Shell commands are confirmation-gated for risky executable names and blocked for known destructive command/argument patterns.
+- Shell filtering uses `shlex` parsing for common command shapes plus raw-pattern fallback. It is a guardrail, not a sandbox.
 - File write/delete/git mutation tools exist in the runtime but are not planner-visible by default.
 
 ## Memory And State

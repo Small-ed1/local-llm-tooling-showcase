@@ -78,6 +78,11 @@ def test_runtime_exposes_requested_tool_surface(tmp_path: Path):
         "parse_pdf",
         "parse_json_api",
         "screenshot_page",
+        "local_doc_paths",
+        "local_doc_search",
+        "local_doc_read",
+        "local_doc_replace",
+        "tool_structure",
         "build_index",
         "query_index",
         "update_index",
@@ -128,6 +133,12 @@ def test_runtime_exposes_requested_tool_surface(tmp_path: Path):
     assert runtime.aliases["patch_file"] == "apply_patch"
     assert runtime.aliases["rename_file"] == "move_file"
 
+    structure = runtime.tool_structure()
+    assert structure.ok is True
+    assert "local_doc_search" in structure.data["planner_visible"]
+    assert "local_doc_replace" in structure.data["manual_only"]
+    assert structure.data["aliases"]["search_text"] == "grep_search"
+
 
 def test_filesystem_and_utility_tools(tmp_path: Path):
     runtime = make_runtime(tmp_path)
@@ -165,6 +176,39 @@ def test_filesystem_and_utility_tools(tmp_path: Path):
 
     assert runtime.delete_file("moved.txt").ok is True
     assert runtime.sandbox_file_access("../escape.txt").ok is False
+
+
+def test_local_documentation_lookup_and_edits_are_scoped(tmp_path: Path):
+    runtime = make_runtime(tmp_path)
+    docs_dir = runtime.config.workspace_root / "docs"
+    docs_dir.mkdir()
+    (runtime.config.workspace_root / "README.md").write_text("# Demo\n\nRelease checks live here.\n", encoding="utf-8")
+    (docs_dir / "TOOLS.md").write_text("# Tools\n\nOld docs line.\n", encoding="utf-8")
+    (runtime.config.workspace_root / "src.py").write_text("Old docs line.\n", encoding="utf-8")
+
+    paths = runtime.local_doc_paths()
+    assert paths.ok is True
+    assert "README.md" in paths.summary
+    assert "docs/TOOLS.md" in paths.summary
+
+    search = runtime.local_doc_search("release checks")
+    assert search.ok is True
+    assert search.data["results"][0]["path"] == "README.md"
+
+    read = runtime.local_doc_read("docs/TOOLS.md")
+    assert read.ok is True
+    assert "Old docs line" in read.summary
+
+    blocked = runtime.local_doc_replace("docs/TOOLS.md", "Old docs line", "New docs line")
+    assert blocked.ok is False
+    assert "Confirmation required" in blocked.summary
+
+    replaced = runtime.local_doc_replace("docs/TOOLS.md", "Old docs line", "New docs line", confirm=True)
+    assert replaced.ok is True
+    assert "New docs line" in runtime.local_doc_read("docs/TOOLS.md").summary
+
+    non_doc = runtime.local_doc_replace("src.py", "Old docs line", "New docs line", confirm=True)
+    assert non_doc.ok is False
 
 
 def test_search_index_memory_task_and_observability_tools(tmp_path: Path):
@@ -278,6 +322,8 @@ def test_web_tools_with_local_http_server_and_stubbed_search(tmp_path: Path):
         fetched = runtime.fetch_url(f"{base_url}/page")
         assert fetched.ok is True
         assert "Hello world" in fetched.summary
+        assert fetched.data["status"] == 200
+        assert fetched.data["content_type"].startswith("text/html")
 
         extracted = runtime.extract_webpage_content(url=f"{base_url}/page")
         assert extracted.ok is True
@@ -291,6 +337,10 @@ def test_web_tools_with_local_http_server_and_stubbed_search(tmp_path: Path):
         downloaded = runtime.download_file(f"{base_url}/file", "download.txt")
         assert downloaded.ok is True
         assert runtime.read_file("download.txt").summary == "downloaded"
+
+        rejected = runtime.fetch_url("file:///etc/passwd")
+        assert rejected.ok is False
+        assert "http://" in rejected.summary
 
         runtime.fetch_url = lambda url, confirm=False: ToolCall(
             "fetch_url",
@@ -321,6 +371,7 @@ def test_web_tools_with_local_http_server_and_stubbed_search(tmp_path: Path):
         html_search = runtime.web_search("structured outputs")
         assert html_search.ok is True
         assert "Example Docs" in html_search.summary
+        assert html_search.data["results"][0]["snippet"] == "Structured outputs guide"
     finally:
         server.shutdown()
         thread.join(timeout=5)
@@ -499,6 +550,30 @@ def test_shell_dev_and_git_tools(tmp_path: Path, monkeypatch):
 
     (workspace / "tracked.txt").write_text("stash me\n", encoding="utf-8")
     assert runtime.git_stash().ok is True
+
+
+def test_shell_policy_parses_executables_and_argument_patterns(tmp_path: Path):
+    runtime = make_runtime(tmp_path, project_equals_workspace=True)
+
+    sudo = runtime.shell_command("sudo", confirm=True)
+    assert sudo.ok is False
+    assert "exec:sudo" in sudo.data["blocked"]
+
+    root_delete = runtime.shell_command("rm -fr /", confirm=True)
+    assert root_delete.ok is False
+    assert "args:rm -rf /" in root_delete.data["blocked"]
+
+    disk_redirect = runtime.shell_command("echo hi >/dev/sda", confirm=True)
+    assert disk_redirect.ok is False
+    assert "redirect:/dev/sd" in disk_redirect.data["blocked"]
+
+    git_reset = runtime.shell_command("git -C . reset --hard", confirm=False)
+    assert git_reset.ok is False
+    assert "git:reset" in git_reset.data["risky"]
+
+    quoted_text = runtime.shell_command("python -c \"print('rm temp.txt')\"", confirm=False)
+    assert quoted_text.ok is True
+    assert quoted_text.summary == "rm temp.txt"
 
 
 def test_tool_stats_tracking_success(tmp_path: Path):
