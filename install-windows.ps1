@@ -1,24 +1,37 @@
 $ErrorActionPreference = "Stop"
 
-$ProjectPath = "$HOME\Projects\local-llm-tooling-showcase"
+$ProjectPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+$PythonLauncher = Get-Command py -ErrorAction SilentlyContinue
+$PythonCommand = Get-Command python -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "== local-llm-tooling-showcase Windows installer ==" -ForegroundColor Cyan
 Write-Host ""
 
-if (!(Test-Path $ProjectPath)) {
-    Write-Host "Project folder not found:" -ForegroundColor Red
-    Write-Host $ProjectPath
-    Write-Host ""
-    Write-Host "Put the repo folder there first, then rerun this script."
+Set-Location $ProjectPath
+
+if ($PythonLauncher) {
+    $PythonExe = "py"
+    $VersionCommand = @("-3", "-c", "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)")
+    $VenvCommand = @("-3", "-m", "venv", ".venv")
+} elseif ($PythonCommand) {
+    $PythonExe = "python"
+    $VersionCommand = @("-c", "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)")
+    $VenvCommand = @("-m", "venv", ".venv")
+} else {
+    Write-Host "Python 3.11+ was not found. Install Python 3.11 and rerun this script." -ForegroundColor Red
     exit 1
 }
 
-cd $ProjectPath
+& $PythonExe @VersionCommand
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Python 3.11+ is required. Update your Python install and rerun this script." -ForegroundColor Red
+    exit 1
+}
 
 if (!(Test-Path ".venv")) {
     Write-Host "Creating virtual environment..." -ForegroundColor Yellow
-    py -3.11 -m venv .venv
+    & $PythonExe @VenvCommand
 }
 
 Write-Host "Activating virtual environment..." -ForegroundColor Yellow
@@ -27,19 +40,14 @@ Write-Host "Activating virtual environment..." -ForegroundColor Yellow
 Write-Host "Upgrading pip..." -ForegroundColor Yellow
 python -m pip install --upgrade pip
 
-Write-Host "Installing Windows curses compatibility..." -ForegroundColor Yellow
-python -m pip install windows-curses
+Write-Host "Installing project with development tools..." -ForegroundColor Yellow
+python -m pip install -e ".[dev]"
 
-Write-Host "Installing test tools..." -ForegroundColor Yellow
-python -m pip install pytest
-
-Write-Host "Installing project..." -ForegroundColor Yellow
-python -m pip install -e .
+Write-Host "Running Python tests..." -ForegroundColor Yellow
+python -m pytest tests/
 
 Write-Host ""
 Write-Host "Install complete." -ForegroundColor Green
 Write-Host ""
-Write-Host "Starting server..."
-Write-Host ""
-
-tooling-showcase serve
+Write-Host "Activate later with: .\\.venv\\Scripts\\Activate.ps1" -ForegroundColor Green
+Write-Host "Start the app with: tooling-showcase serve" -ForegroundColor Green

@@ -9,7 +9,9 @@ cd local-llm-tooling-showcase
 tooling-showcase serve
 ```
 
-`./install.sh` can create `.venv`, install the package editable, run tests, run the frontend JS syntax check, and prompt for benchmarking when more than three Ollama models are installed.
+`./install.sh` can create `.venv`, use the first available `python3` or `python` that is version 3.11+, upgrade `pip`, install `.[dev]`, run tests, run the frontend JS syntax check, and prompt for benchmarking when more than three Ollama models are installed.
+
+On Windows, run `.\install-windows.ps1` from PowerShell instead. It uses the repository folder it was launched from, validates Python 3.11+, installs `.[dev]`, and runs the test suite before handing control back.
 
 Check the resulting environment with:
 
@@ -26,6 +28,17 @@ pip install -e '.[dev]'
 tooling-showcase doctor
 pytest tests/
 node --check src/tooling_showcase/static/app.js
+```
+
+Manual Windows setup:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+python -m pytest tests/
+tooling-showcase doctor
 ```
 
 ## Wheel Install Check

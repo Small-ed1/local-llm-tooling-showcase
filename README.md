@@ -8,9 +8,10 @@ This is a showcase and starter skeleton, not a hosted SaaS product. It is design
 
 ## Highlights
 
-- Chat-first web UI with local sessions, sidebar history, message variants, retries, hotlinked source views, profile settings, and runtime status.
+- Chat-first web UI with local sessions, sidebar history, message variants, retries, hotlinked source views, profile settings, runtime status, and a compact control-room settings flow.
 - Deterministic routing for clean tool-shaped requests before involving an LLM.
 - Model-directed tool loop for questions that need files, search, indexing, adapters, memories, or web context.
+- Deep research runs that can stay local or mix local and web-backed sources, then save structured reports under `state/research/`.
 - Local benchmark suite that ranks installed Ollama models by task category before showing profile suggestions.
 - Tool runtime with file search/read, content search, index build/query, web search, local library access, guarded shell execution, git-style inspection, and task state tools.
 - Planner-safe tool protocol that exposes only selected tools to the model and marks shell execution as confirmation-gated.
@@ -22,7 +23,7 @@ This is a showcase and starter skeleton, not a hosted SaaS product. It is design
 - This is a local-first runtime, not a sandbox. Run it only against workspaces you are comfortable exposing to local tools.
 - Ollama-backed open-ended answers, benchmarking, and model-profile derivation require a running local Ollama service.
 - Browser sessions, settings, prompts, avatars, and UI memories live in browser local storage.
-- Backend memories, benchmark profiles, event journals, logs, and tool stats live under ignored `state/` files.
+- Backend memories, benchmark profiles, research sessions, event journals, logs, and tool stats live under ignored `state/` files.
 - The static web UI has no build step; validate browser changes with `node --check src/tooling_showcase/static/app.js` and manual smoke tests.
 
 ## Linux Quick Start
@@ -40,9 +41,9 @@ Open the web UI at:
 http://127.0.0.1:8123
 ```
 
-### Windows Quick Start
+`./install.sh` uses the first available `python3` or `python` that is version 3.11+, upgrades `pip`, installs `.[dev]`, and can run tests plus the frontend syntax check from the same prompt flow.
 
-Windows uses PowerShell and needs one extra compatibility package because Python’s built-in `curses` module is not available by default on Windows.
+### Windows Quick Start
 
 If you are on Windows, use the included PowerShell installer:
 
@@ -61,12 +62,12 @@ http://127.0.0.1:8123
 Manual Windows setup:
 
 ```powershell
-py -3.11 -m venv .venv
+py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
 python -m pip install --upgrade pip
-python -m pip install windows-curses pytest
-python -m pip install -e .
+python -m pip install -e ".[dev]"
+python -m pytest tests/
 
 tooling-showcase serve
 ```
@@ -77,7 +78,7 @@ Windows notes:
 - Do not use `./install.sh` in PowerShell. That script is for Unix-like shells.
 - Use `.\.venv\Scripts\Activate.ps1` instead of `.venv/bin/activate`.
 - Ollama should be installed and running separately if you want model-backed responses.
-- If you see `ModuleNotFoundError: No module named '_curses'`, install the Windows compatibility package inside the virtual environment:
+- The editable install now pulls in the Windows `curses` compatibility package automatically. If you still see `ModuleNotFoundError: No module named '_curses'`, reinstall inside the virtual environment:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
@@ -117,8 +118,9 @@ The stdlib web UI includes:
 
 - chat with streaming responses, message editing, retry variants, hotlinked source drawers, and safe markdown rendering
 - local browser sessions with search, recents, export, and deletion controls
+- a built-in deep research flow with local-only and hybrid modes plus saved reports
+- an overview page for runtime, workspace, adapter, and session state at a glance
 - tool console with presets and raw JSON arguments for debugging
-- adapters page for linked workspace projects
 - journal page for backend event traces
 - help page with Ollama, interface, tool, session, settings, adapter, and debugging guidance
 - settings for models, system prompts, profile data, avatars, memories, theme colors, fonts, and data management
@@ -132,7 +134,7 @@ tooling-showcase serve
 
 ## Screenshots
 
-Desktop captures are cropped to `1920x1080` for release pages and README previews.
+Desktop captures below are refreshed from the current UI. Mobile captures show the same UI in a phone-sized layout.
 
 | Help and setup | Chat thread |
 | --- | --- |
@@ -142,7 +144,7 @@ Desktop captures are cropped to `1920x1080` for release pages and README preview
 | --- | --- |
 | ![Profile settings](docs/screenshots/desktop/settings-profile.png) | ![Manual tool console](docs/screenshots/desktop/manual-tool-console.png) |
 
-Mobile captures show the responsive drawer, chat, settings, and help layout.
+Mobile captures show the current responsive chat, help, and settings flow.
 
 <p>
   <img src="docs/screenshots/mobile/chat-mobile.png" alt="Mobile chat" width="260" />
@@ -205,7 +207,7 @@ The test suite covers:
 - model-directed tool calls and duplicate-call prevention
 - planner restrictions for hidden or unsafe write tools
 - shell confirmation behavior
-- adapters, retrieval/indexing, journal behavior, and service fallback paths
+- adapters, retrieval/indexing, research-lab sessions, journal behavior, and service fallback paths
 - Ollama-compatible wrapper request shapes
 - static server and UI marker behavior
 
@@ -231,6 +233,7 @@ src/tooling_showcase/
   tool_protocol.py   planner-visible tool schemas
   model_routing.py   task-specific model profiles
   benchmarking.py    local Ollama benchmark suite and profile derivation
+  research/          research planning, runs, reports, and storage
   server.py          stdlib web UI/API server
   ollama_wrapper.py  Ollama-compatible API facade
   static/            browser UI
