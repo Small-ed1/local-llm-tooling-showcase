@@ -65,11 +65,13 @@ class ResearchStorage:
             "goal": payload.get("goal"),
             "mode": payload.get("mode"),
             "depth": payload.get("depth"),
+            "model": payload.get("model"),
             "status": payload.get("status"),
             "created_at": payload.get("created_at"),
             "updated_at": payload.get("updated_at"),
             "source_count": len(payload.get("sources") or []),
             "claim_count": len(payload.get("claims") or []),
+            "loop_count": len(payload.get("iterations") or []),
         }
 
     def session_path(self, session_id: str) -> Path:

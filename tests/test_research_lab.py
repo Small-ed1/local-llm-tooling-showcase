@@ -30,7 +30,16 @@ def test_research_lab_creates_and_runs_local_session(tmp_path):
     assert complete["status"] == "complete"
     assert complete["report"].startswith("# Research Lab Report")
     assert complete["sources"]
-    assert [call["stage"] for call in complete["model_calls"]] == ["research.plan", "research.source_plan", "research.extract", "research.report"]
+    assert [call["stage"] for call in complete["model_calls"]] == [
+        "research.plan",
+        "research.source_plan",
+        "research.extract",
+        "research.expand",
+        "research.source_plan",
+        "research.extract",
+        "research.report",
+    ]
+    assert complete["iterations"] and len(complete["iterations"]) == 2
     assert (tmp_path / "state" / "research" / "sessions" / f"{session['id']}.json").exists()
 
 
@@ -43,13 +52,21 @@ def test_research_lab_updates_planned_session(tmp_path):
     lab = ResearchLab(ShowcaseService(config))
 
     session = lab.start("old goal", mode="local", depth=1)
-    updated = lab.update(session["id"], goal="new hybrid goal", mode="hybrid", depth=3)
+    updated = lab.update(
+        session["id"],
+        goal="new hybrid goal",
+        mode="hybrid",
+        depth=3,
+        model="qwen2.5:14b-instruct",
+        plan=["read docs", "verify endpoints", "expand evidence"],
+    )
 
     assert updated["goal"] == "new hybrid goal"
     assert updated["mode"] == "hybrid"
     assert updated["depth"] == 3
+    assert updated["model"] == "qwen2.5:14b-instruct"
     assert updated["status"] == "planned"
-    assert updated["plan"] != session["plan"]
+    assert updated["plan"] == ["read docs", "verify endpoints", "expand evidence"]
     assert updated["sources"] == []
     assert [call["stage"] for call in updated["model_calls"]] == ["research.plan", "research.plan"]
 

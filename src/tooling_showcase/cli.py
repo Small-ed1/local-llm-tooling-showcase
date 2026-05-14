@@ -79,6 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
     research.add_argument("goal", help="Research goal or question.")
     research.add_argument("--mode", choices=["local", "hybrid"], default="local")
     research.add_argument("--depth", type=int, default=2)
+    research.add_argument("--model", default="auto", help="Research model override (use auto for routing).")
     research.add_argument("--no-run", action="store_true", help="Only create the plan; do not gather sources.")
 
     return parser
@@ -134,7 +135,7 @@ def main() -> int:
 
     if args.command == "research":
         lab = ResearchLab(service)
-        session = lab.start(args.goal, mode=args.mode, depth=args.depth)
+        session = lab.start(args.goal, mode=args.mode, depth=args.depth, model=args.model)
         if not args.no_run:
             session = lab.run(session["id"])
         print(session.get("report") or json.dumps(session, indent=2, sort_keys=True))

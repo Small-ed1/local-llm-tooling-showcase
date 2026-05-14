@@ -817,6 +817,11 @@ const state = {
   activePage: "chat"
 };
 
+let modelLoadRequestId = 0;
+let resumeRefreshTimer = null;
+let appBooted = false;
+let pageWasHidden = document.hidden;
+
 const $ = (id) => document.getElementById(id);
 const chatLog = $("chatLog");
 const template = $("messageTemplate");
@@ -2059,10 +2064,15 @@ function renderResearchPlanCard(root, message) {
         <textarea class="code-input research-plan-goal" rows="4">${escapeHtml(session.goal || message.requestText || "")}</textarea>
       </label>
       <div class="research-plan-settings">
+        <label class="field-label">Model
+          <select class="input research-plan-model"></select>
+        </label>
         <label class="field-label">Research type
           <select class="input research-plan-depth">
             <option value="1" ${Number(session.depth) === 1 ? "selected" : ""}>Light Research</option>
+            <option value="2" ${Number(session.depth) === 2 ? "selected" : ""}>Balanced Research</option>
             <option value="3" ${Number(session.depth || 3) === 3 ? "selected" : ""}>Deep Research</option>
+            <option value="4" ${Number(session.depth) === 4 ? "selected" : ""}>Extended Research</option>
           </select>
         </label>
         <label class="field-label">Source mode
@@ -2072,16 +2082,16 @@ function renderResearchPlanCard(root, message) {
           </select>
         </label>
       </div>
-      <div class="research-plan-details">
-        <strong>Plan</strong>
-        <ol>${plan.map((step) => `<li>${escapeHtml(step)}</li>`).join("") || "<li>No plan steps were generated.</li>"}</ol>
-      </div>
+      <label class="field-label">Plan
+        <textarea class="code-input research-plan-plan" rows="8" placeholder="One step per line.">${escapeHtml(plan.join("\n"))}</textarea>
+      </label>
       <div class="research-plan-actions">
         <button class="ghost-button" data-research-action="edit">Save edits</button>
         <button class="danger-button" data-research-action="deny">Deny</button>
         <button class="primary-button" data-research-action="confirm">Confirm and run</button>
       </div>
     </section>`;
+  populateResearchModelSelect(root.querySelector(".research-plan-model"), session.model || "");
   root.querySelectorAll("[data-research-action]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -2093,12 +2103,15 @@ function renderResearchPlanCard(root, message) {
 function researchPlanInputs(message) {
   const node = chatLog.querySelector(`[data-message-id="${message.id}"]`);
   const card = node?.querySelector(".research-plan-card");
+  const planText = card?.querySelector(".research-plan-plan")?.value || "";
   return {
     node,
     card,
     goal: card?.querySelector(".research-plan-goal")?.value.trim() || "",
     depth: Math.max(1, Math.min(4, Number(card?.querySelector(".research-plan-depth")?.value || 3))),
-    mode: ["local", "hybrid"].includes(card?.querySelector(".research-plan-mode")?.value) ? card.querySelector(".research-plan-mode").value : "local"
+    mode: ["local", "hybrid"].includes(card?.querySelector(".research-plan-mode")?.value) ? card.querySelector(".research-plan-mode").value : "local",
+    model: card?.querySelector(".research-plan-model")?.value || "",
+    plan: parsePlanSteps(planText)
   };
 }
 
@@ -2118,7 +2131,9 @@ async function updateResearchPlan(message, sessionId) {
     const data = await researchApi(`/api/research/${encodeURIComponent(sessionId)}/update`, {
       goal: inputs.goal,
       mode: inputs.mode,
-      depth: inputs.depth
+      depth: inputs.depth,
+      model: inputs.model,
+      plan: inputs.plan
     });
     patchActiveMessageVariant(message, {
       content: "Review this Research Lab plan before running it.",
@@ -2440,12 +2455,17 @@ function scrollChat() {
 }
 
 async function loadModels() {
+  const requestId = ++modelLoadRequestId;
   const select = $("modelSelect");
   select.innerHTML = `<option value="">Auto route</option>`;
+  state.modelsOk = null;
+  $("modelStatus").textContent = "checking";
+  $("modelStatus").className = "status-pill muted";
   let liveModels = [];
   try {
     const res = await fetch("/api/models");
     const data = await res.json();
+    if (requestId !== modelLoadRequestId) return;
     liveModels = Array.isArray(data.models) ? data.models : [];
     state.models = liveModels;
     state.benchmarks = data.benchmarks && typeof data.benchmarks === "object" ? data.benchmarks : { models: {}, profiles: {} };
@@ -2455,6 +2475,7 @@ async function loadModels() {
     $("modelStatus").className = `status-pill ${data.ok ? "ok" : "bad"}`;
     if (!data.ok && data.error) renderModelMeta(`Ollama models could not be loaded: ${data.error}`);
   } catch (error) {
+    if (requestId !== modelLoadRequestId) return;
     state.modelsOk = false;
     state.models = [];
     state.benchmarks = { models: {}, profiles: {} };
@@ -2464,6 +2485,7 @@ async function loadModels() {
     renderModelMeta(`Model endpoint unavailable: ${error.message}`);
   }
 
+  if (requestId !== modelLoadRequestId) return;
   const seen = new Set();
   for (const model of liveModels) {
     const name = model.name || model.model;
@@ -2478,6 +2500,16 @@ async function loadModels() {
   appendBenchmarkProfileOptions(select, seen, { includeDisabled: true });
   updateModelMeta();
   renderRuntimeStatus();
+}
+
+function refreshVisibleData() {
+  if (!appBooted || document.hidden) return;
+  clearTimeout(resumeRefreshTimer);
+  resumeRefreshTimer = setTimeout(() => {
+    resumeRefreshTimer = null;
+    if (document.hidden) return;
+    void Promise.allSettled([loadModels(), loadTools(), loadJournal(), loadRuntime()]);
+  }, 150);
 }
 
 function appendBenchmarkProfileOptions(select, seen, { includeDisabled = false } = {}) {
@@ -3122,6 +3154,19 @@ function openRetryDialog(message) {
   populateRetryModelSelect(message.model || $("modelSelect").value || "");
   $("retryStyleSelect").value = message.ok === false ? "debug" : "same";
   $("retryExtraInput").value = "";
+  const researchSection = $("retryResearchSection");
+  const researchPlan = message.researchPlan?.session || null;
+  if (researchSection) {
+    researchSection.hidden = !researchPlan;
+    if (researchPlan) {
+      populateResearchModelSelect($("retryResearchModelSelect"), researchPlan.model || message.model || "");
+      $("retryResearchModeSelect").value = "expand";
+      $("retryResearchDepthSelect").value = String(Math.max(1, Math.min(4, Number(researchPlan.depth || 2))));
+      $("retryResearchSourceModeSelect").value = ["local", "hybrid"].includes(researchPlan.mode) ? researchPlan.mode : "local";
+      $("retryResearchGoalInput").value = researchPlan.goal || message.requestText || "";
+      $("retryResearchPlanInput").value = Array.isArray(researchPlan.plan) ? researchPlan.plan.join("\n") : "";
+    }
+  }
   const user = findPreviousUserMessage(message.id);
   $("retryContextPreview").textContent = [
     `Previous user message:\n${user?.content || "(not found)"}`,
@@ -3134,10 +3179,11 @@ function openRetryDialog(message) {
 function closeRetryDialog() {
   state.retryMessageId = null;
   $("retryDialog").hidden = true;
+  $("retryResearchSection").hidden = true;
 }
 
-function populateRetryModelSelect(currentModel) {
-  const select = $("retryModelSelect");
+function populateResearchModelSelect(select, currentModel) {
+  if (!select) return;
   select.innerHTML = '<option value="">Auto route / current default</option>';
   const seen = new Set();
   state.models.forEach((model) => {
@@ -3151,6 +3197,10 @@ function populateRetryModelSelect(currentModel) {
   });
   appendBenchmarkProfileOptions(select, seen);
   select.value = currentModel && currentModel !== "auto" ? currentModel : "";
+}
+
+function populateRetryModelSelect(currentModel) {
+  populateResearchModelSelect($("retryModelSelect"), currentModel);
 }
 
 function buildRetryPrompt(userText, previousAssistantText, style, extraInput) {
@@ -3173,6 +3223,14 @@ function buildRetryPrompt(userText, previousAssistantText, style, extraInput) {
   ].filter((part) => part !== "").join("\n");
 }
 
+function parsePlanSteps(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((step) => step.trim())
+    .filter(Boolean)
+    .slice(0, 7);
+}
+
 async function runRetryFromDialog() {
   const session = activeSession();
   const message = session?.messages?.find((candidate) => candidate.id === state.retryMessageId);
@@ -3183,6 +3241,61 @@ async function runRetryFromDialog() {
   const style = $("retryStyleSelect").value;
   const extra = $("retryExtraInput").value.trim();
   const modelOverride = $("retryModelSelect").value || null;
+  const researchPlan = message.researchPlan?.session || null;
+  if (researchPlan) {
+    const researchMode = $("retryResearchModeSelect").value || "expand";
+    const researchModel = $("retryResearchModelSelect").value || "auto";
+    const goal = $("retryResearchGoalInput").value.trim() || researchPlan.goal || user.content || "";
+    const depth = Math.max(1, Math.min(4, Number($("retryResearchDepthSelect").value || researchPlan.depth || 2)));
+    const sourceMode = ["local", "hybrid"].includes($("retryResearchSourceModeSelect").value) ? $("retryResearchSourceModeSelect").value : "local";
+    const plan = parsePlanSteps($("retryResearchPlanInput").value);
+    const nextPlan = researchMode === "rebuild" ? [] : plan;
+    closeRetryDialog();
+    state.busy = true;
+    const started = performance.now();
+    setRequestStats("research retry running");
+    try {
+      const updated = await researchApi(`/api/research/${encodeURIComponent(researchPlan.id)}/update`, {
+        goal,
+        mode: sourceMode,
+        depth,
+        model: researchModel,
+        plan: nextPlan.length ? nextPlan : null
+      });
+      patchActiveMessageVariant(message, {
+        content: "Research plan updated. Expanding and verifying the next pass...",
+        thinking: (updated.session?.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
+        researchPlan: { status: "planned", session: updated.session },
+        toolCalls: [{ tool_name: "research.update", ok: true, summary: `${updated.session?.plan?.length || 0} plan steps`, data: updated.session || {} }],
+        model: researchModel || message.model || "auto"
+      });
+      renderChat();
+      const data = await researchApi(`/api/research/${encodeURIComponent(researchPlan.id)}/run`, {});
+      const sessionData = data.session || {};
+      patchActiveMessageVariant(message, {
+        content: sessionData.report || "Research completed without a report.",
+        thinking: (sessionData.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
+        researchPlan: { status: "complete", session: sessionData },
+        toolCalls: [
+          { tool_name: "research.start", ok: true, summary: `${(updated.session?.plan || []).length} plan steps`, data: updated.session || {} },
+          { tool_name: "research.run", ok: true, summary: `${(sessionData.sources || []).length} sources · ${(sessionData.claims || []).length} claims`, data: sessionData }
+        ],
+        ok: true,
+        latencyMs: Math.round(performance.now() - started),
+        model: researchModel || message.model || "auto",
+        modelRoute: { category: "research lab", reason: `retry mode: ${researchMode}` }
+      });
+    } catch (error) {
+      patchActiveMessageVariant(message, { ok: false, content: `Research retry failed: ${error.message}`, researchPlan: { status: "failed", session: researchPlan } });
+    } finally {
+      state.busy = false;
+      persist();
+      renderChat();
+      setRequestStats(`${message.latencyMs || Math.round(performance.now() - started)} ms · research lab`);
+      await loadJournal();
+    }
+    return;
+  }
   const requestText = buildRetryPrompt(user.content || "", previousAssistant, style, extra);
   addMessageVariant(message, {
     content: "",
@@ -4495,6 +4608,18 @@ function bindPageShell() {
 }
 
 function bindEvents() {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      pageWasHidden = true;
+      return;
+    }
+    if (!pageWasHidden) return;
+    pageWasHidden = false;
+    refreshVisibleData();
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) refreshVisibleData();
+  });
   $("sendBtn").addEventListener("click", () => {
     if (state.busy && state.lastController) state.lastController.abort();
     else { closeMobileDrawers(); sendMessage(); }
@@ -4639,10 +4764,11 @@ async function runComposerResearch(goalText = "") {
   if (input) input.value = "";
   const depth = Math.max(1, Math.min(4, Number($("composerResearchDepthSelect")?.value || 3)));
   const mode = ["local", "hybrid"].includes($("composerResearchModeSelect")?.value) ? $("composerResearchModeSelect").value : "local";
+  const researchModel = $("modelSelect").value || "auto";
   const userMessage = addSessionMessage("user", text, { model: "research lab" });
   chatLog.querySelector(".empty-state")?.remove();
   renderMessage(userMessage);
-  const assistantMessage = addSessionMessage("assistant", "", { thinking: "", toolCalls: [], model: "research lab", requestText: text, parentUserMessageId: userMessage.id });
+  const assistantMessage = addSessionMessage("assistant", "", { thinking: "", toolCalls: [], model: researchModel, requestText: text, parentUserMessageId: userMessage.id });
   const assistantNode = renderMessage(assistantMessage);
   const contentNode = assistantNode.querySelector(".message-content");
   scrollChat();
@@ -4653,13 +4779,13 @@ async function runComposerResearch(goalText = "") {
   $("sendBtn").textContent = "X";
   $("sendBtn").title = "Research planning";
   try {
-    const startedSession = await researchApi("/api/research/start", { goal: text, mode, depth });
+    const startedSession = await researchApi("/api/research/start", { goal: text, mode, depth, model: researchModel });
     patchActiveMessageVariant(assistantMessage, {
       content: "Review this Research Lab plan before running it.",
       thinking: (startedSession.session?.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
       toolCalls: [{ tool_name: "research.start", ok: true, summary: `${startedSession.session?.plan?.length || 0} plan steps`, data: startedSession.session || {} }],
       ok: true,
-      model: "research lab",
+      model: startedSession.session?.model || researchModel,
       researchPlan: { status: "planned", session: startedSession.session || {} }
     });
     renderMessageContent(contentNode, assistantMessage);
@@ -4717,6 +4843,7 @@ async function boot() {
   renderAll();
   await Promise.allSettled([loadModels(), loadTools(), loadJournal(), loadRuntime()]);
   renderAll();
+  appBooted = true;
 }
 
 boot();

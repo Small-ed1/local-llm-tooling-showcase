@@ -583,6 +583,39 @@
           <textarea id="retryExtraInput" class="code-input" rows="7" placeholder="Optional retry instructions. The previous user and assistant messages are included as context."></textarea>
         </section>
       </div>
+      <section id="retryResearchSection" class="settings-section wide" hidden>
+        <h3>Research retry</h3>
+        <div class="settings-grid compact-grid">
+          <section class="settings-section">
+            <label class="field-label" for="retryResearchModeSelect">Retry mode</label>
+            <select id="retryResearchModeSelect" class="input">
+              <option value="expand">Expand and verify</option>
+              <option value="reuse">Reuse edited plan</option>
+              <option value="rebuild">Rebuild from goal</option>
+            </select>
+            <label class="field-label" for="retryResearchModelSelect">Research model</label>
+            <select id="retryResearchModelSelect" class="input"></select>
+          </section>
+          <section class="settings-section">
+            <label class="field-label" for="retryResearchDepthSelect">Research depth</label>
+            <select id="retryResearchDepthSelect" class="input">
+              <option value="1">Light Research</option>
+              <option value="2">Balanced Research</option>
+              <option value="3">Deep Research</option>
+              <option value="4">Extended Research</option>
+            </select>
+            <label class="field-label" for="retryResearchSourceModeSelect">Source mode</label>
+            <select id="retryResearchSourceModeSelect" class="input">
+              <option value="local">Local Only</option>
+              <option value="hybrid">Hybrid</option>
+            </select>
+          </section>
+        </div>
+        <label class="field-label" for="retryResearchGoalInput">Goal</label>
+        <textarea id="retryResearchGoalInput" class="code-input" rows="4" placeholder="Edit the research goal before rerunning."></textarea>
+        <label class="field-label" for="retryResearchPlanInput">Plan</label>
+        <textarea id="retryResearchPlanInput" class="code-input" rows="8" placeholder="One step per line. This plan can be fully edited before rerun."></textarea>
+      </section>
       <details class="settings-section wide retry-context" open>
         <summary>Context preview</summary>
         <pre id="retryContextPreview" class="detail-json"></pre>

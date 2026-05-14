@@ -28,20 +28,22 @@ class ResearchLab:
         session = self.storage.get(session_id)
         return session.to_dict() if session else None
 
-    def start(self, goal: str, *, mode: str = "local", depth: int = 2) -> dict:
+    def start(self, goal: str, *, mode: str = "local", depth: int = 2, model: str = "auto") -> dict:
         clean_goal = " ".join(str(goal or "").split())
         if not clean_goal:
             raise ValueError("Research goal is required.")
         clean_mode = mode if mode in {"local", "hybrid"} else "local"
         clean_depth = max(1, min(int(depth or 2), 4))
+        clean_model = str(model or "auto").strip() or "auto"
         session = ResearchSession(
             id=f"research_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}",
             goal=clean_goal,
             mode=clean_mode,
             depth=clean_depth,
+            model=clean_model,
             status="planned",
         )
-        session.plan, trace = self.modeler.plan(
+        session.plan, trace = ResearchModeler(self.service.ollama, model=clean_model).plan(
             clean_goal,
             mode=session.mode,
             depth=session.depth,
@@ -51,9 +53,12 @@ class ResearchLab:
         return self.storage.save(session)
 
     def run(self, session_id: str) -> dict:
-        return self.runner.run(session_id)
+        session = self.storage.get(session_id)
+        if not session:
+            raise FileNotFoundError(f"Research session not found: {session_id}")
+        return self.runner.run(session_id, model=session.model)
 
-    def update(self, session_id: str, *, goal: str, mode: str = "local", depth: int = 2) -> dict:
+    def update(self, session_id: str, *, goal: str, mode: str = "local", depth: int = 2, model: str = "auto", plan: list[str] | None = None) -> dict:
         session = self.storage.get(session_id)
         if not session:
             raise FileNotFoundError(f"Research session not found: {session_id}")
@@ -63,13 +68,26 @@ class ResearchLab:
         session.goal = clean_goal
         session.mode = mode if mode in {"local", "hybrid"} else "local"
         session.depth = max(1, min(int(depth or 2), 4))
+        session.model = str(model or "auto").strip() or "auto"
         session.status = "planned"
-        session.plan, trace = self.modeler.plan(
-            session.goal,
-            mode=session.mode,
-            depth=session.depth,
-            fallback=self.planner.plan(session.goal, mode=session.mode, depth=session.depth),
-        )
+        clean_plan = [" ".join(str(step or "").split()) for step in (plan or []) if " ".join(str(step or "").split())]
+        if clean_plan:
+            session.plan = clean_plan[:7]
+            trace = {
+                "stage": "research.plan",
+                "ok": True,
+                "at": utc_now(),
+                "model": session.model,
+                "summary": f"Plan edited locally with {len(session.plan)} steps.",
+                "json": {"steps": session.plan},
+            }
+        else:
+            session.plan, trace = ResearchModeler(self.service.ollama, model=session.model).plan(
+                session.goal,
+                mode=session.mode,
+                depth=session.depth,
+                fallback=self.planner.plan(session.goal, mode=session.mode, depth=session.depth),
+            )
         session.sources = []
         session.claims = []
         session.findings = []

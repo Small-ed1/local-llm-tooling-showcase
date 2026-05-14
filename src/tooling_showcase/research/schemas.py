@@ -30,6 +30,7 @@ class ResearchSession:
     goal: str
     mode: str = "local"
     depth: int = 2
+    model: str = "auto"
     status: str = "created"
     created_at: str = field(default_factory=utc_now)
     updated_at: str = field(default_factory=utc_now)
@@ -40,6 +41,7 @@ class ResearchSession:
     report: str = ""
     errors: list[str] = field(default_factory=list)
     model_calls: list[dict[str, Any]] = field(default_factory=list)
+    iterations: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -57,6 +59,7 @@ class ResearchSession:
             goal=str(payload["goal"]),
             mode=str(payload.get("mode", "local")),
             depth=int(payload.get("depth", 2)),
+            model=str(payload.get("model", "auto")),
             status=str(payload.get("status", "created")),
             created_at=str(payload.get("created_at") or utc_now()),
             updated_at=str(payload.get("updated_at") or utc_now()),
@@ -67,4 +70,5 @@ class ResearchSession:
             report=str(payload.get("report") or ""),
             errors=list(payload.get("errors") or []),
             model_calls=list(payload.get("model_calls") or []),
+            iterations=list(payload.get("iterations") or []),
         )

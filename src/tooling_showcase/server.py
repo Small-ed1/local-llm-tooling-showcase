@@ -254,6 +254,7 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                         str(payload.get("goal", "")),
                         mode=str(payload.get("mode", "local")),
                         depth=_safe_int(payload.get("depth"), 2, minimum=1, maximum=4),
+                        model=str(payload.get("model", "auto")),
                     )
                     self._send_json({"ok": True, "session": session})
                 except Exception as exc:
@@ -294,6 +295,8 @@ def run_server(service: ShowcaseService, host: str, port: int) -> int:
                             goal=str(payload.get("goal", "")),
                             mode=str(payload.get("mode", "local")),
                             depth=_safe_int(payload.get("depth"), 2, minimum=1, maximum=4),
+                            model=str(payload.get("model", "auto")),
+                            plan=[str(item).strip() for item in payload.get("plan", []) if str(item).strip()] if isinstance(payload.get("plan"), list) else None,
                         )
                         self._send_json({"ok": True, "session": session})
                     except FileNotFoundError as exc:

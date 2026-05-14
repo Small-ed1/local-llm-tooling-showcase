@@ -8,10 +8,11 @@ from tooling_showcase.research.schemas import ResearchSession, utc_now
 
 
 class ResearchModeler:
-    def __init__(self, ollama) -> None:
+    def __init__(self, ollama, model: str | None = None) -> None:
         self.ollama = ollama
         self.timeout_seconds = min(int(getattr(ollama.config, "timeout_seconds", 30) or 30), 45)
-        self.model = route_model("deep research analysis reasoning evidence report").profile.model
+        self.default_model = route_model("deep research analysis reasoning evidence report").profile.model
+        self.model = model if model and model != "auto" else self.default_model
 
     def plan(self, goal: str, *, mode: str, depth: int, fallback: list[str]) -> tuple[list[str], dict[str, Any]]:
         prompt = (
@@ -81,6 +82,24 @@ class ResearchModeler:
         )
         result = self._ask_text("research.report", prompt)
         return (str(result.get("content") or "").strip(), result)
+
+    def expand(self, session: ResearchSession, *, verification_notes: list[str], fallback: list[str]) -> tuple[list[str], dict[str, Any]]:
+        prompt = (
+            "Revise the research plan for the next iteration. Expand weak points, add explicit verification steps, "
+            "and keep the plan concrete. Return JSON only with a `steps` array of 4 to 7 strings.\n\n"
+            f"Goal: {session.goal}\nMode: {session.mode}\nDepth: {session.depth}\nCurrent plan:\n"
+            f"{chr(10).join(f'- {step}' for step in session.plan)}\n\n"
+            f"Verification notes:\n{chr(10).join(f'- {note}' for note in verification_notes) or '- None'}\n\n"
+            f"Latest sources:\n{self._source_context(session)}"
+        )
+        result = self._ask_json("research.expand", prompt)
+        steps = []
+        if result["ok"]:
+            payload = result.get("json") if isinstance(result.get("json"), dict) else {}
+            steps = [str(item).strip() for item in payload.get("steps", []) if str(item).strip()]
+        if not steps:
+            steps = fallback
+        return steps[:7], result
 
     def _coerce_tool_plan(self, items: Any, *, mode: str, limit: int) -> list[tuple[str, dict, str]]:
         allowed = {"tree_view", "read_file", "content_search", "build_index", "query_index", "library_info", "library_search"}
