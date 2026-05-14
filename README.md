@@ -144,13 +144,6 @@ Desktop captures below are refreshed from the current UI. Mobile captures show t
 | --- | --- |
 | ![Profile settings](docs/screenshots/desktop/settings-profile.png) | ![Manual tool console](docs/screenshots/desktop/manual-tool-console.png) |
 
-Mobile captures show the current responsive chat, help, and settings flow.
-
-<p>
-  <img src="docs/screenshots/mobile/chat-mobile.png" alt="Mobile chat" width="260" />
-  <img src="docs/screenshots/mobile/settings-mobile.png" alt="Mobile settings" width="260" />
-  <img src="docs/screenshots/mobile/help-mobile.png" alt="Mobile help" width="260" />
-</p>
 
 ## Ollama-Compatible Wrapper
 
