@@ -550,6 +550,27 @@ p { color: var(--muted); font-size: 12px; line-height: 1.5; }
   text-decoration-color: var(--accent-two-35);
 }
 
+.failure-advice {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--warn-26);
+  border-radius: 14px;
+  background: var(--warn-045);
+}
+
+.failure-advice strong {
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.failure-advice span {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .message-content.rendered code {
   padding: 1px 5px;
   border: 1px solid var(--line);
@@ -662,6 +683,39 @@ p { color: var(--muted); font-size: 12px; line-height: 1.5; }
   line-height: 1.45;
   max-height: 240px;
   overflow: auto;
+}
+
+.tool-action-hint {
+  margin: 8px 10px 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--warn-22);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--warn-05);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.tool-action-hint strong {
+  color: var(--warn);
+}
+
+.manual-tool-summary {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.manual-tool-summary strong {
+  color: var(--text);
+}
+
+.manual-tool-summary.bad strong {
+  color: var(--bad-text);
+}
+
+.manual-tool-summary.ok strong {
+  color: var(--ok);
 }
 .nested-tool-call > pre {
   padding: 10px;
@@ -1015,7 +1069,7 @@ p { color: var(--muted); font-size: 12px; line-height: 1.5; }
 
 .runtime-strip {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 8px;
   padding: 10px;
   border-radius: 22px;
@@ -1032,6 +1086,57 @@ p { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .runtime-tile.ok { border-color: var(--ok-26); background: var(--ok-055); }
 .runtime-tile.bad { border-color: var(--bad-28); background: var(--bad-055); }
 .runtime-tile.warn { border-color: var(--warn-26); background: var(--warn-045); }
+
+.runtime-path-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0 10px;
+}
+
+.runtime-path-heading h3 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: -0.015em;
+}
+
+.runtime-path-heading span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.runtime-path-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.runtime-path-card {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-03);
+}
+
+.runtime-path-card span {
+  color: var(--muted-2);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.runtime-path-card code {
+  color: var(--accent-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
 
 .runtime-tile span,
 .runtime-tile small {
@@ -2596,6 +2701,14 @@ body.user-mode .dev-only {
 }
 
 @media (max-width: 760px) {
+  .runtime-path-heading {
+    display: grid;
+  }
+
+  .runtime-path-grid {
+    grid-template-columns: 1fr;
+  }
+
   .research-plan-settings {
     grid-template-columns: 1fr;
   }

@@ -10,11 +10,19 @@ node --check src/tooling_showcase/static/app.js
 python -m compileall -q src tests
 bash -n install.sh
 bash -n start-servers.sh
+if command -v pwsh >/dev/null 2>&1; then
+  pwsh -NoProfile -Command '$errors = $null; [System.Management.Automation.Language.Parser]::ParseFile("install-windows.ps1", [ref]$null, [ref]$errors) > $null; if ($errors.Count) { $errors | Format-List; exit 1 }'
+else
+  echo "pwsh not installed; skipping Windows installer syntax check."
+fi
 PYTHONPATH=src python -m tooling_showcase.cli doctor
 pytest tests/
 
+export RUFF_CACHE_DIR="${RUFF_CACHE_DIR:-${TMPDIR:-/tmp}/tooling-showcase-ruff-cache}"
 if python -m ruff --version >/dev/null 2>&1; then
   python -m ruff check src tests
+elif command -v ruff >/dev/null 2>&1; then
+  ruff check src tests
 else
   echo "ruff not installed; install with pip install -e '.[dev]' to run lint locally."
 fi

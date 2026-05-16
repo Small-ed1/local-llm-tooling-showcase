@@ -1,140 +1,194 @@
 # Local LLM Tooling Showcase
 
-`local-llm-tooling-showcase` is a compact local-first assistant runtime for showing how deterministic routing, guarded tools, local Ollama models, workspace adapters, and event logging fit together.
+`local-llm-tooling-showcase` is a local-first assistant you can run on your own machine. It gives you a browser chat UI backed by local Ollama models plus guarded tools for reading files, searching code, checking docs, using web context, running research sessions, and observing what happened.
 
-This is a showcase and starter skeleton, not a hosted SaaS product. It is designed to run on your machine, inspect your workspace, and keep risky local actions behind explicit boundaries.
+This is not a hosted SaaS product and it is not a sandbox. Run it only against folders you are comfortable exposing to local tools.
 
 ![Chat thread screenshot](docs/screenshots/desktop/chat-thread.png)
 
-## Highlights
+## What You Get
 
-- Chat-first web UI with local sessions, sidebar history, message variants, retries, hotlinked source views, profile settings, runtime status, and a compact control-room settings flow.
-- Deterministic routing for clean tool-shaped requests before involving an LLM.
-- Model-directed tool loop for questions that need files, search, indexing, adapters, memories, or web context.
-- Deep research runs that can stay local or mix local and web-backed sources, then save structured reports under `state/research/`.
-- Local benchmark suite that ranks installed Ollama models by task category before showing profile suggestions.
-- Tool runtime with file search/read, content search, index build/query, web search, local library access, guarded shell execution, git-style inspection, and task state tools.
-- Planner-safe tool protocol that exposes only selected tools to the model and marks shell execution as confirmation-gated.
-- Ollama-compatible wrapper so other local clients can talk to the showcase through familiar `/api/chat` and `/api/generate` shapes.
-- Event journal for observing routes, tool calls, responses, and autonomous-run traces.
+- A local web UI at `http://127.0.0.1:8123` with chat history, retries, variants, settings, help, tool traces, and mobile-friendly screens.
+- Local file and code tools for file search, file reads, content search, local docs, workspace indexing, adapters, and safe source links.
+- Ollama-backed answers for open-ended chat and model-planned tool use.
+- Guarded shell and mutation tools that require confirmation before risky actions.
+- A research flow that can gather local or hybrid sources and save reports under `state/research/`.
+- A benchmark command that profiles your installed Ollama models and improves local model routing.
+- An optional Ollama-compatible wrapper for clients that expect `/api/chat` or `/api/generate`.
 
-## Known Limits
+## Requirements
 
-- This is a local-first runtime, not a sandbox. Run it only against workspaces you are comfortable exposing to local tools.
-- Ollama-backed open-ended answers, benchmarking, and model-profile derivation require a running local Ollama service.
-- Browser sessions, settings, prompts, avatars, and UI memories live in browser local storage.
-- Backend memories, benchmark profiles, research sessions, event journals, logs, and tool stats live under ignored `state/` files.
-- The static web UI has no build step; validate browser changes with `node --check` on each file under `src/tooling_showcase/static/*.js` and manual smoke tests.
+- Python 3.11 or newer.
+- Git.
+- Ollama for model-backed chat, benchmarking, and open-ended answers.
+- Node.js if you are editing or validating the static web UI. The installers skip the static JS check when Node is unavailable.
 
-## Linux Quick Start
+Deterministic local tool routes such as `find file README` can work without Ollama. Normal chat and benchmarking need Ollama running locally.
+
+## 1. Install Ollama First
+
+Install Ollama before installing this project so the setup and doctor checks can see your local model service.
+
+Linux:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama --version
+```
+
+macOS or Windows:
+
+Download and install Ollama from `https://ollama.com/download`, then open a new terminal or PowerShell window.
+
+Pull the default general model used by this project:
+
+```bash
+ollama pull qwen3:8b
+ollama list
+```
+
+If `ollama list` cannot connect, start Ollama and try again:
+
+```bash
+ollama serve
+```
+
+Leave Ollama running while you use the app. After this project is installed, `tooling-showcase benchmark --list-models` shows what the app can see.
+
+## 2. Install This Project
+
+Linux or macOS:
 
 ```bash
 git clone https://github.com/Small-ed1/local-llm-tooling-showcase.git
 cd local-llm-tooling-showcase
 ./install.sh
-tooling-showcase serve
+tooling-showcase doctor
 ```
 
-Open the web UI at:
-
-```text
-http://127.0.0.1:8123
-```
-
-`./install.sh` uses the first available `python3` or `python` that is version 3.11+, upgrades `pip`, installs `.[dev]`, and can run tests plus the frontend syntax check from the same prompt flow.
-
-### Windows Quick Start
-
-If you are on Windows, use the included PowerShell installer:
+Windows PowerShell:
 
 ```powershell
 git clone https://github.com/Small-ed1/local-llm-tooling-showcase.git
 cd local-llm-tooling-showcase
 powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
+tooling-showcase doctor
 ```
 
-Then open the web UI at:
+`./install.sh` can create `.venv`, install development tools, run tests, run static JavaScript checks, and prompt for local model benchmarking when several Ollama models are installed.
+
+`.\install-windows.ps1` creates or reuses `.venv`, installs `.[dev]`, runs tests, runs the static JavaScript syntax check when Node is available, runs `tooling-showcase doctor`, and reports whether Ollama model inventory is reachable.
+
+Manual setup if you do not want to use the installer:
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e '.[dev]'
+tooling-showcase doctor
+```
+
+Windows manual activation is `.\.venv\Scripts\Activate.ps1`, and the install command is `python -m pip install -e ".[dev]"`.
+
+## 3. Start The Web UI
+
+```bash
+tooling-showcase serve
+```
+
+Open:
 
 ```text
 http://127.0.0.1:8123
 ```
 
-Manual Windows setup:
+Try these prompts first:
 
-```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
-python -m pytest tests/
-
-tooling-showcase serve
+```text
+find file README
+read file README.md
+search content ToolRuntime
+what can this project do?
 ```
 
-Windows notes:
+The server binds to `127.0.0.1` by default. Do not bind to `0.0.0.0` unless you understand the safety model and intentionally want LAN access.
 
-- Use `.\install-windows.ps1` on Windows.
-- Do not use `./install.sh` in PowerShell. That script is for Unix-like shells.
-- Use `.\.venv\Scripts\Activate.ps1` instead of `.venv/bin/activate`.
-- Ollama should be installed and running separately if you want model-backed responses.
-- The editable install now pulls in the Windows `curses` compatibility package automatically. If you still see `ModuleNotFoundError: No module named '_curses'`, reinstall inside the virtual environment:
+## Model Setup Tips
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-python -m pip install windows-curses
-```
+- `qwen3:8b` is the default general model and is the best first model to pull.
+- `tooling-showcase models` shows the static routing categories and installed-model guidance.
+- `tooling-showcase benchmark --list-models` shows local Ollama inventory without running the full benchmark.
+- `tooling-showcase benchmark --limit-tasks 2` is a quick benchmark smoke run.
+- `tooling-showcase benchmark` profiles unbenchmarked local models and stores results in `state/model_benchmarks.json`.
+- If you only want deterministic tool routes, run a command with `TOOLING_SHOWCASE_OLLAMA_ENABLED=false`.
 
-Useful CLI checks:
+Example deterministic check without model fallback:
 
 ```bash
+TOOLING_SHOWCASE_OLLAMA_ENABLED=false tooling-showcase ask "find file README"
+```
+
+## Common Commands
+
+```bash
+tooling-showcase doctor
 tooling-showcase ask "find file README"
 tooling-showcase ask "read file README.md"
 tooling-showcase ask "search content ToolRuntime"
-tooling-showcase ask "show adapters"
 tooling-showcase journal --limit 5
+tooling-showcase adapters
 tooling-showcase models
-tooling-showcase doctor
 tooling-showcase benchmark --list-models
 ```
 
-If Ollama is running locally, open-ended chat requests can use it automatically. If Ollama is not available, deterministic local tools still work and failed fallback paths stay explicit.
+## Data And Privacy
 
-More docs:
+- Browser sessions, settings, prompts, avatars, and UI memories live in browser local storage.
+- Backend memories, benchmark profiles, research sessions, event journals, logs, indexes, tasks, and tool stats live under ignored `state/` files.
+- Model-created memories are stored locally in `state/memories.json`; do not store secrets there.
+- Manual `/api/tool` access is disabled on non-loopback binds unless explicitly enabled with `--enable-remote-tool-api` or `TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API=1`.
+- Shell execution is guarded; risky commands and mutation tools require confirmation.
 
-- `docs/INSTALL.md` for clean-clone setup and Linux notes.
-- `docs/CONFIGURATION.md` for ports, environment variables, and browser storage keys.
-- `docs/OLLAMA_WRAPPER.md` for wrapper endpoints and curl smoke tests.
-- `docs/TOOLS.md` for stable planner tools versus experimental runtime tools.
-- `docs/BENCHMARKING.md` for local model benchmark behavior.
-- `docs/TROUBLESHOOTING.md` for Ollama, benchmark, UI, and state issues.
-- `docs/RELEASE_CHECKLIST.md` for release validation commands.
-- `SAFETY.md`, `SAFETY_MODEL.md`, and `SECURITY.md` for local execution boundaries.
-- `CONTRIBUTING.md` for development and release hygiene.
+## Known Limits
 
-## Web UI
+- This is a local-first runtime, not a sandbox. Local tools can inspect the configured workspace.
+- Ollama-backed open-ended answers, benchmarking, and model-profile derivation require a running local Ollama service.
+- First model pulls can be large and slow, depending on the model and network.
+- The static web UI has no build step; browser/UI edits are validated with `node --check` and smoke tests.
+- Benchmark results are local ignored state and are not shipped with the release.
 
-The stdlib web UI includes:
+## Troubleshooting
 
-- chat with streaming responses, message editing, retry variants, hotlinked source drawers, and safe markdown rendering
-- local browser sessions with search, recents, export, and deletion controls
-- a built-in deep research flow with local-only and hybrid modes plus saved reports
-- an overview page for runtime, workspace, adapter, and session state at a glance
-- tool console with presets and raw JSON arguments for debugging
-- journal page for backend event traces
-- help page with Ollama, interface, tool, session, settings, adapter, and debugging guidance
-- settings for models, system prompts, profile data, avatars, memories, theme colors, fonts, and data management
-- mobile-first layout with an edge drawer trigger, narrower chat scaling, and mobile settings/help views
-
-Run it with:
+If chat says Ollama is unavailable:
 
 ```bash
-tooling-showcase serve
+ollama list
+curl http://127.0.0.1:11434/api/tags
+tooling-showcase doctor
 ```
+
+If the web UI does not load:
+
+```bash
+tooling-showcase serve --host 127.0.0.1 --port 8123
+```
+
+If a tool is rejected, it is usually because the tool is not planner-visible, requires confirmation, or the model asked for an invalid tool name. See `docs/TOOLS.md` for the stable planner tool list.
+
+Useful docs:
+
+- `docs/INSTALL.md` for clean-clone, wheel, and `pipx` install checks.
+- `docs/CONFIGURATION.md` for ports, environment variables, and browser storage keys.
+- `docs/TOOLS.md` for stable planner tools versus experimental runtime tools.
+- `docs/BENCHMARKING.md` for local model benchmark behavior.
+- `docs/OLLAMA_WRAPPER.md` for wrapper endpoints and curl smoke tests.
+- `docs/TROUBLESHOOTING.md` for Ollama, benchmark, UI, and state issues.
+- `SAFETY.md`, `SAFETY_MODEL.md`, and `SECURITY.md` for local execution boundaries.
 
 ## Screenshots
 
-Desktop captures below are refreshed from the current UI. Mobile captures show the same UI in a phone-sized layout.
+Desktop captures below are refreshed from the v1.0 UI. Mobile captures show the same UI in a phone-sized layout.
 
 | Help and setup | Chat thread |
 | --- | --- |
@@ -144,6 +198,21 @@ Desktop captures below are refreshed from the current UI. Mobile captures show t
 | --- | --- |
 | ![Profile settings](docs/screenshots/desktop/settings-profile.png) | ![Manual tool console](docs/screenshots/desktop/manual-tool-console.png) |
 
+Mobile captures show the responsive chat, help, and settings flow.
+
+<p>
+  <img src="docs/screenshots/mobile/chat-mobile.png" alt="Mobile chat" width="260" />
+  <img src="docs/screenshots/mobile/settings-mobile.png" alt="Mobile settings" width="260" />
+  <img src="docs/screenshots/mobile/help-mobile.png" alt="Mobile help" width="260" />
+</p>
+
+## Release Packages
+
+The v1.0 release is shipped as a Python wheel plus source archives.
+
+- The wheel contains the installable `tooling_showcase` package, console entry points, and static UI assets.
+- The source distribution and clean source zip include `src/`, `tests/`, `docs/`, screenshots, examples, `install.sh`, `install-windows.ps1`, `start-servers.sh`, `scripts/`, and release documentation.
+- Ignored local state such as `state/`, `.venv/`, `.ruff_cache/`, `dist/`, `build/`, benchmark outputs, logs, journals, and personal paths are excluded from release archives.
 
 ## Ollama-Compatible Wrapper
 
@@ -159,67 +228,37 @@ Default endpoints:
 - raw Ollama: `http://127.0.0.1:11434`
 - tool-capable Ollama wrapper: `http://127.0.0.1:11436`
 
-Point local clients at the wrapper when you want the familiar Ollama API shape with this project's tool runtime underneath.
+Point local clients at the wrapper when you want familiar Ollama API shapes with this project's tool runtime underneath.
 
-## Benchmarking
+## Developer Checks
 
-Model profile suggestions are hidden until local benchmark results exist. Run the suite with:
+Run the release gate from the repo root:
 
 ```bash
-tooling-showcase benchmark
+scripts/release-check.sh
 ```
 
-The suite covers context use, summarization, coding, debugging, reasoning, arithmetic, Linux triage, structured JSON/tool output, safety boundaries, planning, writing, extraction, roleplay tone, and retrieval strategy. Results are stored in `state/model_benchmarks.json` and auto-routing uses the best benchmarked model for each category.
-
-By default, benchmarking only runs models that have not been profiled yet. Use `--all` to rebuild every local profile.
-
-`./install.sh` prompts for benchmarking when more than three Ollama models are installed, and prompts again when newly installed models are detected.
-
-## Safety Model
-
-This project intentionally does not expose the whole machine directly to a model.
-
-- Tool planning only sees the selected schemas in `tool_protocol.py`.
-- Read/search/index tools are marked safe for automatic execution.
-- Memory create/edit/delete/list/load tools are planner-visible for explicit user memory requests.
-- Shell execution is guarded and not safe for automatic planner execution by default.
-- Risky shell patterns require confirmation, and blocked patterns are rejected.
-- Tool calls are bounded, duplicate tool calls are skipped, and results are journaled.
-- Browser sessions, memories, prompts, avatars, and theme settings are stored locally in browser storage.
-- Model-created memories are stored locally in `state/memories.json`; do not store secrets there.
-
-Review `AGENTS.md`, `tools.py`, and `tool_protocol.py` before using this against sensitive workspaces.
-
-## Tested Behaviors
-
-The test suite covers:
-
-- deterministic routing and direct tool fallback
-- model routing profile selection
-- benchmark-derived model profiles
-- model-directed tool calls and duplicate-call prevention
-- planner restrictions for hidden or unsafe write tools
-- shell confirmation behavior
-- adapters, retrieval/indexing, research-lab sessions, journal behavior, and service fallback paths
-- Ollama-compatible wrapper request shapes
-- static server and UI marker behavior
-- required CI Playwright browser boot smoke for the DOM app, with local skip behavior when Chromium is not installed
-
-Run all tests with:
+Focused checks:
 
 ```bash
 pytest tests/
-```
-
-Run the frontend syntax check with:
-
-```bash
 node --check src/tooling_showcase/static/app-data.js
 node --check src/tooling_showcase/static/markdown.js
 node --check src/tooling_showcase/static/app.js
+python -m ruff check src tests
 ```
 
-The browser smoke test is `pytest tests/test_browser_smoke.py`. CI installs Playwright Chromium and runs it as a required browser job; local runs skip when Playwright or its Chromium browser is not installed.
+The browser smoke test is `pytest tests/test_browser_smoke.py`. CI installs Playwright Chromium and runs it as a required browser job; local runs skip when Playwright or Chromium is missing.
+
+## Next Steps
+
+After `v1.0.0`, the repo should move from showcase breadth toward reliable local-assistant depth:
+
+- Add planner/tool evals that verify tool choice, confirmation boundaries, invalid JSON recovery, and disabled-Ollama fallbacks.
+- Keep reducing tool-surface risk by making planner-visible tools explicit, documented, and covered by tests.
+- Improve local UX around Ollama setup, benchmark gaps, timeout tuning, research recovery, and one-click diagnostics.
+- Harden packaging with repeated wheel, source distribution, `pipx`, Windows installer, and browser smoke checks.
+- Avoid adding broad new tools until the planner/tool regression suite covers the current surface.
 
 ## Project Layout
 

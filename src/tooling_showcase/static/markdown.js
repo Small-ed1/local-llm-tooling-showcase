@@ -10,10 +10,29 @@
       .replaceAll("'", "&#039;");
   }
 
+  function safeHttpMarkdownUrl(value) {
+    const text = String(value || "")
+      .replaceAll("&amp;", "&")
+      .replaceAll("&quot;", '"')
+      .replaceAll("&#039;", "'")
+      .trim();
+    if (!/^https?:\/\/[^\s)]+$/i.test(text)) return "";
+    return escapeHtml(
+      text
+        .replaceAll('"', "%22")
+        .replaceAll("'", "%27")
+        .replaceAll("<", "%3C")
+        .replaceAll(">", "%3E")
+    );
+  }
+
   function renderInlineMarkdown(text) {
     return escapeHtml(text)
       .replace(/`([^`]+)`/g, "<code>$1</code>")
-      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match, label, url) => {
+        const href = safeHttpMarkdownUrl(url);
+        return href ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>` : match;
+      })
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   }
 
@@ -93,6 +112,7 @@
 
   global.ShowcaseMarkdown = Object.freeze({
     escapeHtml,
+    safeHttpMarkdownUrl,
     renderInlineMarkdown,
     renderMarkdownBlocks,
     renderSafeMarkdown

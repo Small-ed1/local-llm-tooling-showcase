@@ -1,4 +1,6 @@
-from tooling_showcase.cli import build_parser
+import sys
+
+from tooling_showcase.cli import build_parser, main
 
 
 def test_serve_commands_default_to_loopback():
@@ -51,3 +53,55 @@ def test_runtime_commands_support_timeout_options():
     assert serve.tool_timeout == 60
     assert wrapper.ollama_timeout == 300
     assert wrapper.tool_timeout == 90
+
+
+def test_cli_ask_find_file_readme_without_ollama(tmp_path, monkeypatch, capsys):
+    (tmp_path / "README.md").write_text("demo readme", encoding="utf-8")
+    _isolate_cli_state(tmp_path, monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["tooling-showcase", "ask", "find file README"])
+
+    status = main()
+    output = capsys.readouterr().out
+
+    assert status == 0
+    assert "README.md" in output
+    assert "Tool calls:" in output
+
+
+def test_cli_research_local_runs_under_state_research(tmp_path, monkeypatch, capsys):
+    (tmp_path / "README.md").write_text("# Demo\n\nResearch demo notes.\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    _isolate_cli_state(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "tooling-showcase",
+            "research",
+            "local demo research",
+            "--mode",
+            "local",
+            "--depth",
+            "1",
+        ],
+    )
+
+    status = main()
+    output = capsys.readouterr().out
+    research_root = tmp_path / "state" / "research"
+
+    assert status == 0
+    assert "# Research Lab Report" in output
+    assert list((research_root / "sessions").glob("*.json"))
+    assert list((research_root / "reports").glob("*.md"))
+    assert not list((tmp_path / "state").glob("research_*.json"))
+    assert not list((tmp_path / "state").glob("research_*.md"))
+
+
+def _isolate_cli_state(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TOOLING_SHOWCASE_OLLAMA_ENABLED", "false")
+    monkeypatch.setenv("TOOLING_SHOWCASE_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("TOOLING_SHOWCASE_PORTFOLIO", str(tmp_path))
+    monkeypatch.setenv("TOOLING_SHOWCASE_JOURNAL", str(tmp_path / "state" / "events.jsonl"))
+    monkeypatch.setenv("TOOLING_SHOWCASE_BENCHMARKS", str(tmp_path / "state" / "model_benchmarks.json"))

@@ -48,12 +48,22 @@ tooling-showcase doctor
 ## Wheel Install Check
 
 ```bash
-python -m build --wheel
+python -m build --sdist --wheel
 python -m venv /tmp/showcase-wheel-venv
 . /tmp/showcase-wheel-venv/bin/activate
 pip install dist/local_llm_tooling_showcase-*.whl
 tooling-showcase doctor
 ```
+
+The source distribution includes the source tree plus `install.sh`, `install-windows.ps1`, `start-servers.sh`, `scripts/`, `docs/`, screenshots, examples, and tests through `MANIFEST.in`.
+
+One-off `pipx` smoke check after building a wheel:
+
+```bash
+pipx run --spec dist/local_llm_tooling_showcase-<version>-py3-none-any.whl tooling-showcase doctor
+```
+
+Use `pipx install dist/local_llm_tooling_showcase-<version>-py3-none-any.whl` only when you want a persistent CLI install.
 
 If the package is not installed in the current shell, use `PYTHONPATH=src` for CLI smoke checks:
 
@@ -91,5 +101,6 @@ node --check src/tooling_showcase/static/markdown.js
 node --check src/tooling_showcase/static/app.js
 python -m compileall -q src tests
 bash -n install.sh && bash -n start-servers.sh
+pwsh -NoProfile -Command '$errors = $null; [System.Management.Automation.Language.Parser]::ParseFile("install-windows.ps1", [ref]$null, [ref]$errors) > $null; if ($errors.Count) { $errors | Format-List; exit 1 }'
 pytest tests/
 ```

@@ -24,11 +24,19 @@ pytest tests/
 Wheel check:
 
 ```bash
-python -m build --wheel
+python -m build --sdist --wheel
 python -m venv /tmp/showcase-wheel-venv
 . /tmp/showcase-wheel-venv/bin/activate
 python -m pip install dist/local_llm_tooling_showcase-*.whl
 tooling-showcase doctor
+```
+
+Inspect the source distribution for `install.sh`, `install-windows.ps1`, `start-servers.sh`, `scripts/`, `docs/`, screenshots, examples, tests, and `src/tooling_showcase/static/`.
+
+Optional `pipx` wheel smoke:
+
+```bash
+pipx run --spec dist/local_llm_tooling_showcase-<version>-py3-none-any.whl tooling-showcase doctor
 ```
 
 Smoke checks:
@@ -61,7 +69,7 @@ git archive --format=zip --prefix="local-llm-tooling-showcase-<tag>/" --output="
 Inspect the archive for:
 
 - required docs and screenshots
-- `install.sh`, `start-servers.sh`, and package static files
+- `install.sh`, `install-windows.ps1`, `start-servers.sh`, `scripts/`, source files, tests, examples, and package static files
 - no `state/`, `.venv/`, `.ruff_cache/`, benchmark outputs, event journals, logs, or personal paths
 - no temporary transfer artifacts such as `showcase_ui_bundle/`, `model_live_note.txt`, `add_library_tools.py`, or `showcase_static_ui_patch.zip`
 

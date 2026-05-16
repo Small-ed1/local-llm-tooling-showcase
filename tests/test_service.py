@@ -1,4 +1,8 @@
+import json
 from pathlib import Path
+import socket
+
+import pytest
 
 from tooling_showcase.config import OllamaConfig, ShellPolicy, ShowcaseConfig
 from tooling_showcase.benchmarking import save_benchmark_results
@@ -41,11 +45,162 @@ def make_runtime(tmp_path: Path):
     return ToolRuntime(config)
 
 
+PLANNER_DECISION_EVALS = [
+    pytest.param(
+        "read README.md",
+        "read_file",
+        {"path": "README.md"},
+        True,
+        id="file-intent-readme-read",
+    ),
+    pytest.param(
+        "find README",
+        "file_search",
+        {"query": "README"},
+        True,
+        id="filename-discovery-readme",
+    ),
+    pytest.param(
+        "search for ToolRuntime",
+        "content_search",
+        {"query": "ToolRuntime"},
+        True,
+        id="content-search-symbol",
+    ),
+    pytest.param(
+        "What do the project docs say about release checks?",
+        "local_doc_search",
+        {"query": "release checks"},
+        True,
+        id="project-docs-local-first",
+    ),
+    pytest.param(
+        "What is the latest Python release?",
+        "web_search",
+        {"query": "latest Python release"},
+        True,
+        id="current-external-fact-web",
+    ),
+    pytest.param(
+        "Use a shell command to run rm temp.txt",
+        "shell_command",
+        {"command": "rm temp.txt"},
+        False,
+        id="shell-risky-confirmation",
+    ),
+]
+
+
+MEMORY_INTENT_EVALS = [
+    pytest.param(
+        "Remember that I prefer direct answers",
+        "create_memory",
+        {"key": "style", "value": "direct answers"},
+        id="remember-explicit",
+    ),
+    pytest.param(
+        "Recall my answer style",
+        "load_memory",
+        {"key": "style"},
+        id="recall-explicit",
+    ),
+    pytest.param(
+        "Forget my answer style",
+        "delete_memory",
+        {"key": "style"},
+        id="forget-explicit",
+    ),
+]
+
+
+def prepare_planner_eval_workspace(config: ShowcaseConfig) -> None:
+    docs = config.workspace_root / "docs"
+    docs.mkdir(exist_ok=True)
+    (docs / "TOOLS.md").write_text("# Tools\n\nRelease checks are documented here.\n", encoding="utf-8")
+    src = config.workspace_root / "src"
+    src.mkdir(exist_ok=True)
+    (src / "tools.py").write_text("class ToolRuntime:\n    pass\n", encoding="utf-8")
+
+
+def install_planner_eval_stubs(service: ShowcaseService) -> None:
+    service.tools.maybe_contextual_tool_calls = lambda text: []
+    service.tools.web_search = lambda query, confirm=False: ToolCall(
+        "web_search",
+        True,
+        "Official release result: https://example.com/releases",
+        {"query": query, "results": [{"title": "Official releases", "url": "https://example.com/releases"}]},
+    )
+    service.tools.expand_search_result = lambda url, query=None, confirm=False: ToolCall(
+        "expand_search_result",
+        True,
+        "Official release details.",
+        {"url": url, "query": query},
+    )
+
+
+def run_scripted_planner_eval(
+    service: ShowcaseService,
+    text: str,
+    tool_name: str,
+    arguments: dict,
+    *,
+    confirm: bool = False,
+) -> tuple[ActionResult, list[str]]:
+    prompts: list[str] = []
+    responses = iter(
+        [
+            ActionResult(
+                True,
+                json.dumps(
+                    {
+                        "action": "tool_call",
+                        "tool_name": tool_name,
+                        "arguments": arguments,
+                    }
+                ),
+            ),
+            ActionResult(
+                True,
+                json.dumps(
+                    {
+                        "action": "answer",
+                        "answer": "Planner eval complete. <END_OF_MESSAGE>",
+                    }
+                ),
+            ),
+        ]
+    )
+
+    def mock_ask(prompt, **kwargs):
+        prompts.append(prompt)
+        return next(responses)
+
+    service.ollama.ask = mock_ask
+    return service.handle(text, confirm=confirm), prompts
+
+
 def test_service_runs_direct_file_search(tmp_path: Path):
     service = ShowcaseService(make_config(tmp_path))
     result = service.handle("find file README")
     assert result.ok is True
     assert "README.md" in result.message
+
+
+def test_service_disabled_ollama_uses_deterministic_direct_tools(tmp_path: Path):
+    config = make_config(tmp_path)
+    (config.workspace_root / "runtime.py").write_text("class ToolRuntime:\n    pass\n", encoding="utf-8")
+    service = ShowcaseService(config)
+
+    cases = [
+        ("read file README.md", "read_file"),
+        ("find file README", "file_search"),
+        ("search content ToolRuntime", "grep_search"),
+    ]
+    for text, expected_tool in cases:
+        result = service.handle(text)
+        assert result.ok is True
+        assert result.tool_calls[0].tool_name == expected_tool
+        assert "local ollama fallback is disabled" not in result.message.lower()
 
 
 def test_service_routes_project_inspection_to_tree_view(tmp_path: Path):
@@ -69,6 +224,25 @@ def test_service_logs_llm_fallback_without_ollama(tmp_path: Path):
     events = service.recent_events(limit=1)
     assert len(events) == 1
     assert events[0]["route"] == "llm_fallback"
+
+
+def test_service_reports_clear_error_when_ollama_is_unavailable(tmp_path: Path):
+    config = make_config(tmp_path)
+    config.ollama.enabled = True
+    config.ollama.endpoint = f"http://127.0.0.1:{_unused_port()}/api/chat"
+    config.ollama.timeout_seconds = 1
+    service = ShowcaseService(config)
+
+    result = service.handle("Say hello", allow_tools=False, ollama_timeout_seconds=1)
+
+    assert result.ok is False
+    assert "Failed to reach Ollama" in result.message
+
+
+def _unused_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 def test_shell_command_policy_requires_confirm(tmp_path: Path):
@@ -127,6 +301,79 @@ def test_service_allows_model_to_choose_and_run_tool(tmp_path: Path):
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].tool_name == "read_file"
     assert result.tool_calls[0].ok is True
+
+
+@pytest.mark.parametrize(
+    "text, expected_tool, arguments, expected_tool_ok",
+    PLANNER_DECISION_EVALS,
+)
+def test_planner_decision_eval_fixture_selects_expected_tools(
+    tmp_path: Path,
+    text: str,
+    expected_tool: str,
+    arguments: dict,
+    expected_tool_ok: bool,
+):
+    config = make_config(tmp_path)
+    config.ollama.enabled = True
+    prepare_planner_eval_workspace(config)
+    service = ShowcaseService(config)
+    install_planner_eval_stubs(service)
+
+    result, prompts = run_scripted_planner_eval(service, text, expected_tool, arguments)
+
+    assert result.ok is True
+    assert result.tool_calls[0].tool_name == expected_tool
+    assert result.tool_calls[0].ok is expected_tool_ok
+    planner_prompt = prompts[0]
+    assert f'"name": "{expected_tool}"' in planner_prompt
+    assert "For questions about this project or local documentation" in planner_prompt
+    assert "Memory tools are only for explicit remember, recall, or forget requests." in planner_prompt
+    if expected_tool == "shell_command":
+        assert result.tool_calls[0].data["requires_confirmation"] is True
+
+
+@pytest.mark.parametrize("text, expected_tool, arguments", MEMORY_INTENT_EVALS)
+def test_planner_memory_intent_eval_fixture_selects_memory_tools(
+    tmp_path: Path,
+    text: str,
+    expected_tool: str,
+    arguments: dict,
+):
+    config = make_config(tmp_path)
+    config.ollama.enabled = True
+    service = ShowcaseService(config)
+    install_planner_eval_stubs(service)
+    service.tools.save_memory("style", "direct answers")
+
+    result, prompts = run_scripted_planner_eval(service, text, expected_tool, arguments)
+
+    assert result.ok is True
+    assert result.tool_calls[0].tool_name == expected_tool
+    assert result.tool_calls[0].ok is True
+    assert "Memory tools are only for explicit remember, recall, or forget requests." in prompts[0]
+
+
+def test_planner_memory_rule_discourages_incidental_memory_tools(tmp_path: Path):
+    config = make_config(tmp_path)
+    config.ollama.enabled = True
+    service = ShowcaseService(config)
+    install_planner_eval_stubs(service)
+    prompts: list[str] = []
+
+    def mock_ask(prompt, **kwargs):
+        prompts.append(prompt)
+        return ActionResult(
+            True,
+            '{"action":"answer","answer":"No memory tool needed. <END_OF_MESSAGE>"}',
+        )
+
+    service.ollama.ask = mock_ask
+    result = service.handle("Explain memory allocation in Python")
+
+    assert result.ok is True
+    assert result.tool_calls == []
+    assert "Memory tools are only for explicit remember, recall, or forget requests." in prompts[0]
 
 
 def test_service_uses_deterministic_route_before_model_planner(tmp_path: Path):
@@ -435,8 +682,10 @@ def test_service_does_not_repeat_identical_tool_call(tmp_path: Path):
             ),
         ]
     )
+    prompts: list[str] = []
 
     def mock_ask(prompt, system_prompt=None, response_format=None, model=None):
+        prompts.append(prompt)
         return next(responses)
 
     service.ollama.ask = mock_ask
@@ -444,6 +693,107 @@ def test_service_does_not_repeat_identical_tool_call(tmp_path: Path):
     assert result.ok is True
     read_calls = [call for call in result.tool_calls if call.tool_name == "read_file"]
     assert len(read_calls) == 1
+    assert any("Skipped duplicate tool call: read_file" in prompt for prompt in prompts)
+
+
+def test_service_recovers_from_invalid_planner_json(tmp_path: Path):
+    config = make_config(tmp_path)
+    config.ollama.enabled = True
+    service = ShowcaseService(config)
+    service.tools.maybe_contextual_tool_calls = lambda text: []
+    prompts: list[str] = []
+    responses = iter(
+        [
+            ActionResult(True, "not-json"),
+            ActionResult(True, "Recovered after bad planner JSON."),
+        ]
+    )
+
+    def mock_ask(prompt, **kwargs):
+        prompts.append(prompt)
+        return next(responses)
+
+    service.ollama.ask = mock_ask
+    result = service.handle("search for ToolRuntime")
+
+    assert result.ok is True
+    assert result.message == "Recovered after bad planner JSON."
+    assert result.tool_calls == []
+    assert any("Recovery note:" in prompt and "invalid JSON" in prompt for prompt in prompts)
+    assert service.recent_events(limit=1)[0]["mode"] == "invalid_tool_json_recovered"
+
+
+def test_service_max_tool_calls_zero_skips_planner(tmp_path: Path):
+    config = make_config(tmp_path)
+    config.ollama.enabled = True
+    service = ShowcaseService(config)
+    service.tools.maybe_contextual_tool_calls = lambda text: []
+    prompts: list[str] = []
+
+    def mock_ask(prompt, **kwargs):
+        prompts.append(prompt)
+        return ActionResult(True, "No tool calls allowed.")
+
+    service.ollama.ask = mock_ask
+    result = service.handle("search for ToolRuntime", max_tool_calls=0)
+
+    assert result.ok is True
+    assert result.tool_calls == []
+    assert not any("Return exactly one JSON object" in prompt for prompt in prompts)
+    assert any("No tool results were used." in prompt for prompt in prompts)
+
+
+def test_service_default_max_tool_calls_is_four_in_planner_prompt(tmp_path: Path):
+    config = make_config(tmp_path)
+    config.ollama.enabled = True
+    service = ShowcaseService(config)
+    service.tools.maybe_contextual_tool_calls = lambda text: []
+    prompts: list[str] = []
+
+    def mock_ask(prompt, **kwargs):
+        prompts.append(prompt)
+        return ActionResult(
+            True,
+            '{"action":"answer","answer":"No tool needed. <END_OF_MESSAGE>"}',
+        )
+
+    service.ollama.ask = mock_ask
+    result = service.handle("search for ToolRuntime")
+
+    assert result.ok is True
+    assert result.tool_calls == []
+    assert "Step: 1 of 4" in prompts[0]
+
+
+def test_server_caps_max_tool_calls_before_service_handle():
+    from tooling_showcase.server import _call_service_handle, _safe_int
+
+    class StubService:
+        def __init__(self):
+            self.kwargs = {}
+
+        def handle(self, text, *, confirm=False, max_tool_calls=4, **kwargs):
+            self.kwargs = {"confirm": confirm, "max_tool_calls": max_tool_calls, **kwargs}
+            return ActionResult(True, "ok")
+
+    service = StubService()
+    capped = _safe_int(99, 4, minimum=0, maximum=12)
+    result = _call_service_handle(
+        service,
+        "test",
+        confirm=False,
+        model=None,
+        system_prompt=None,
+        stream=False,
+        options=None,
+        max_tool_calls=capped,
+    )
+
+    assert result.ok is True
+    assert capped == 12
+    assert service.kwargs["max_tool_calls"] == 12
+    assert _safe_int(-5, 4, minimum=0, maximum=12) == 0
+    assert _safe_int("bad", 4, minimum=0, maximum=12) == 4
 
 
 def test_service_allows_model_memory_tools(tmp_path: Path):

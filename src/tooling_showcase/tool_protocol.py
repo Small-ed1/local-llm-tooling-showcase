@@ -223,7 +223,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "safe_auto_run": True,
     },
     "load_memory": {
-        "description": "Load one stored user memory by key when a previous preference or personal detail is needed.",
+        "description": "Load one stored user memory by key only when the user explicitly asks to recall or use a remembered preference or personal detail.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -269,7 +269,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "safe_auto_run": True,
     },
     "list_memories": {
-        "description": "List stored user memories so you can find the right key before loading, editing, or deleting.",
+        "description": "List stored user memories only for explicit recall, memory listing, edit, or forget requests so you can find the right key.",
         "parameters": {
             "type": "object",
             "properties": {},

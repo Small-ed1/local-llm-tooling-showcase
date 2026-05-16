@@ -7,12 +7,14 @@ import base64
 import json
 import os
 import subprocess
+import zipfile
 
 import pytest
 
 from tooling_showcase.config import OllamaConfig, ShellPolicy, ShowcaseConfig
 from tooling_showcase.models import ToolCall
-from tooling_showcase.tools import ToolRuntime
+from tooling_showcase.tool_protocol import TOOL_SCHEMAS
+from tooling_showcase.tools import MANUAL_CONFIRMATION_TOOLS, TOOL_SURFACE_TAGS, ToolRuntime
 
 
 def make_runtime(
@@ -140,6 +142,38 @@ def test_runtime_exposes_requested_tool_surface(tmp_path: Path):
     assert structure.data["aliases"]["search_text"] == "grep_search"
 
 
+def test_tool_surface_classification_covers_runtime_tools(tmp_path: Path):
+    runtime = make_runtime(tmp_path)
+    available = set(runtime.available_tools())
+    planner_tools = available & set(TOOL_SCHEMAS)
+    planner_safe = {
+        name
+        for name in planner_tools
+        if TOOL_SCHEMAS[name].get("safe_auto_run")
+    }
+    allowed_tags = {
+        "planner-safe",
+        "manual-only",
+        "mutation",
+        "shell",
+        "network",
+        "stateful",
+        "experimental",
+    }
+
+    assert set(TOOL_SURFACE_TAGS) == available
+    assert all(set(tags) <= allowed_tags and tags for tags in TOOL_SURFACE_TAGS.values())
+    assert {name for name, tags in TOOL_SURFACE_TAGS.items() if "planner-safe" in tags} == planner_safe
+    assert {name for name, tags in TOOL_SURFACE_TAGS.items() if "manual-only" in tags} == available - planner_tools
+    assert {name for name, tags in TOOL_SURFACE_TAGS.items() if "experimental" in tags} == available - planner_tools
+    assert {name for name, tags in TOOL_SURFACE_TAGS.items() if "mutation" in tags} <= MANUAL_CONFIRMATION_TOOLS
+
+    structure = runtime.tool_structure()
+    assert structure.data["classification"]["mutation"]
+    assert "git_branch" in structure.data["manual_confirmation"]
+    assert "shell_command" in structure.data["classification"]["shell"]
+
+
 def test_filesystem_and_utility_tools(tmp_path: Path):
     runtime = make_runtime(tmp_path)
 
@@ -173,6 +207,9 @@ def test_filesystem_and_utility_tools(tmp_path: Path):
     assert runtime.convert_units(2, "km", "m").summary == "2000.0"
     assert runtime.datetime_now().ok is True
     assert runtime.generate_uuid().ok is True
+    prompt = runtime.draft_system_prompt(goal="concise implementation help")
+    assert prompt.ok is True
+    assert "concise implementation help" in prompt.data["full_prompt"]
 
     assert runtime.delete_file("moved.txt").ok is True
     assert runtime.sandbox_file_access("../escape.txt").ok is False
@@ -222,6 +259,10 @@ def test_search_index_memory_task_and_observability_tools(tmp_path: Path):
     grep_result = runtime.grep_search("router")
     assert grep_result.ok is True
     assert "notes.txt" in grep_result.summary or "pkg/demo.py" in grep_result.summary
+    content_result = runtime.content_search("catalog")
+    assert content_result.ok is True
+    assert "notes.txt" in content_result.summary
+    assert runtime.content_search("").ok is False
 
     symbol_result = runtime.find_symbol("Demo")
     assert symbol_result.ok is True
@@ -252,6 +293,7 @@ def test_search_index_memory_task_and_observability_tools(tmp_path: Path):
     assert runtime.execute_step(task_id, 0).ok is True
     assert runtime.mark_step_complete(task_id, 0).ok is True
     assert runtime.retry_step(task_id, 1).ok is True
+    assert runtime.mark_step_failed(task_id, 1, "blocked").ok is True
     assert runtime.task_checkpoint(task_id, "halfway there").ok is True
     assert runtime.load_checkpoint(task_id).ok is True
     status = runtime.get_task_status(task_id)
@@ -387,6 +429,71 @@ def test_web_tools_with_local_http_server_and_stubbed_search(tmp_path: Path):
     finally:
         server.shutdown()
         thread.join(timeout=5)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("http://localhost:8123/", "host localhost"),
+        ("http://demo.localhost/", "host demo.localhost"),
+        ("http://127.0.0.1/", "loopback IP"),
+        ("http://[::1]/", "loopback IP"),
+        ("http://10.0.0.1/", "private IP"),
+        ("http://172.16.0.1/", "private IP"),
+        ("http://192.168.1.1/", "private IP"),
+        ("http://169.254.1.1/", "link-local IP"),
+        ("http://[fe80::1]/", "link-local IP"),
+        ("http://169.254.169.254/latest/meta-data/", "metadata IP"),
+        ("http://metadata.google.internal/", "host metadata.google.internal"),
+    ],
+)
+def test_url_fetch_blocks_local_private_link_local_and_metadata_targets(tmp_path: Path, url: str, expected: str):
+    runtime = make_runtime(tmp_path)
+
+    fetched = runtime.fetch_url(url)
+    expanded = runtime.expand_search_result(url)
+
+    assert fetched.ok is False
+    assert "SSRF protection" in fetched.summary
+    assert expected in fetched.summary
+    assert expanded.ok is False
+    assert "SSRF protection" in expanded.summary
+
+
+def test_library_planner_tools_have_happy_and_blocked_paths(tmp_path: Path, monkeypatch):
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    epub_path = library_root / "local-models.epub"
+    with zipfile.ZipFile(epub_path, "w") as archive:
+        archive.writestr(
+            "chapter.xhtml",
+            "<html><body><h1>Tooling guide</h1><p>Local models and retrieval.</p></body></html>",
+        )
+    monkeypatch.setenv("SHOWCASE_LIBRARY_PATHS", str(library_root))
+    runtime = make_runtime(tmp_path)
+
+    info = runtime.library_info()
+    assert info.ok is True
+    assert info.data["count"] == 1
+
+    search = runtime.library_search({"query": "local models"})
+    assert search.ok is True
+    assert search.data["results"][0]["type"] == ".epub"
+
+    item_id = runtime.library.items[0].id
+    read_epub = runtime.library_read_epub({"id": item_id, "query": "retrieval"})
+    assert read_epub.ok is True
+    assert "Local models and retrieval" in read_epub.summary
+    assert runtime.library_read_epub({"id": "missing"}).ok is False
+
+    wrong_zim = runtime.library_read_zim({"id": item_id, "title": "Tooling"})
+    assert wrong_zim.ok is False
+    assert "not a zim" in wrong_zim.summary.lower()
+
+    runtime.library.read_zim = lambda item_id, title: {"ok": True, "text": f"Article: {title}"}
+    read_zim = runtime.library_read_zim({"id": "zim_1", "title": "Tooling"})
+    assert read_zim.ok is True
+    assert "Article: Tooling" in read_zim.summary
 
 
 def test_search_result_ranking_prefers_official_ags_docs(tmp_path: Path):
@@ -588,6 +695,52 @@ def test_shell_policy_parses_executables_and_argument_patterns(tmp_path: Path):
     assert quoted_text.summary == "rm temp.txt"
 
 
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("sudo true", "exec:sudo"),
+        ("mkfs /dev/sda", "exec:mkfs"),
+        ("shutdown now", "exec:shutdown"),
+        ("reboot", "exec:reboot"),
+        ("dd if=/dev/zero of=image.bin", "args:dd if=/of=/dev/sd"),
+        ("chmod -R 777 /", "args:chmod -R 777 /"),
+        ("rm --recursive --force /", "args:rm -rf /"),
+        ("echo hi > /dev/sda", "redirect:/dev/sd"),
+    ],
+)
+def test_shell_policy_blocks_configured_destructive_patterns(tmp_path: Path, command: str, expected: str):
+    runtime = make_runtime(tmp_path, project_equals_workspace=True)
+
+    result = runtime.shell_command(command, confirm=True)
+
+    assert result.ok is False
+    assert expected in result.data["blocked"]
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("rm tmp.txt", "exec:rm"),
+        ("mv a b", "exec:mv"),
+        ("cp a b", "exec:cp"),
+        ("kill 123", "exec:kill"),
+        ("pkill python", "exec:pkill"),
+        ("git clean -fd", "git:clean"),
+        ("git reset --hard", "git:reset"),
+        ("echo hi > out.txt", "redirect:>"),
+        ("echo hi >> out.txt", "redirect:>>"),
+    ],
+)
+def test_shell_policy_requires_confirmation_for_configured_risky_patterns(tmp_path: Path, command: str, expected: str):
+    runtime = make_runtime(tmp_path, project_equals_workspace=True)
+
+    result = runtime.shell_command(command, confirm=False)
+
+    assert result.ok is False
+    assert "Confirmation required" in result.summary
+    assert expected in result.data["risky"]
+
+
 def test_manual_mutation_tools_require_confirmation_and_type_errors_do_not_retry(tmp_path: Path):
     runtime = make_runtime(tmp_path)
     blocked = runtime.run_tool("write_file", {"path": "owned.txt", "content": "owned"}, confirm=False)
@@ -598,6 +751,10 @@ def test_manual_mutation_tools_require_confirmation_and_type_errors_do_not_retry
     allowed = runtime.run_tool("write_file", {"path": "owned.txt", "content": "owned"}, confirm=True)
     assert allowed.ok is True
     assert (runtime.config.workspace_root / "owned.txt").read_text(encoding="utf-8") == "owned"
+
+    blocked_wrapper = runtime.run_tool("run_tests", {"command": "python -c 'print(1)'"}, confirm=False)
+    assert blocked_wrapper.ok is False
+    assert blocked_wrapper.data["requires_confirmation"] is True
 
     calls = {"count": 0}
 

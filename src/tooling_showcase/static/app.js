@@ -41,6 +41,7 @@ const state = {
   models: [],
   benchmarkProfiles: [],
   benchmarks: { models: {}, profiles: {} },
+  benchmarkPath: "",
   tools: [],
   toolCards: [],
   toolDocs: {},
@@ -50,6 +51,10 @@ const state = {
   journalStats: {},
   runtime: null,
   modelsOk: null,
+  modelsError: "",
+  modelsErrorType: "",
+  modelsDisabled: false,
+  modelsEndpoint: "",
   toolsError: "",
   settings: structuredClone(DEFAULT_SETTINGS),
   systemPrompts: [],
@@ -85,7 +90,7 @@ function renderMessageContent(root, message) {
       renderResearchPlanCard(root, message);
       return;
     }
-    root.innerHTML = renderSafeMarkdown(message.content || "");
+    root.innerHTML = `${renderSafeMarkdown(message.content || "")}${failureAdviceHtml(message)}`;
     return;
   }
   root.classList.remove("rendered");
@@ -170,6 +175,56 @@ function wordCount(text) {
 
 function roughTokens(text) {
   return Math.ceil(String(text ?? "").length / 4);
+}
+
+function toolActionHint(call) {
+  const summary = String(call?.summary || "");
+  const data = call?.data && typeof call.data === "object" ? call.data : {};
+  const blob = `${summary} ${JSON.stringify(data)}`.toLowerCase();
+  if (data.error_type === "manual_tool_api_disabled" || (blob.includes("/api/tool") && blob.includes("loopback"))) {
+    return "Manual /api/tool is available on loopback binds by default. Use --host 127.0.0.1, or opt in with --enable-remote-tool-api / TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API=1 only on a trusted network.";
+  }
+  if (data.requires_confirmation || /confirmation required/i.test(summary)) {
+    return "Review the tool arguments, then enable Confirm risky tool actions or turn on the manual Confirm checkbox before retrying.";
+  }
+  if (/timed out/i.test(summary)) {
+    if (/ollama/i.test(summary)) {
+      return "Ollama timeout: increase Ollama timeout seconds, warm/start Ollama, or choose a smaller model.";
+    }
+    return "Tool timeout: increase Tool timeout seconds, narrow the command/tool scope, or run doctor if the local runtime is stuck.";
+  }
+  return "";
+}
+
+function failureAdviceForMessage(message) {
+  if (!message) return null;
+  if (message.researchPlan?.status === "failed") {
+    const info = researchFailureInfo(message.researchPlan.session || {}, null, "research.run");
+    return { title: `Research failed during ${info.stage}`, detail: `Next action: ${info.nextAction}` };
+  }
+  const toolHint = (message.toolCalls || []).map(toolActionHint).find(Boolean);
+  if (toolHint) return { title: "Action needed", detail: toolHint };
+  if (message.ok !== false) return null;
+  const content = String(message.content || "");
+  if (/TOOLING_SHOWCASE_OLLAMA_ENABLED=false|Local Ollama fallback is disabled/i.test(content)) {
+    return { title: "Ollama is disabled", detail: "Set TOOLING_SHOWCASE_OLLAMA_ENABLED=true or remove the override for model replies. Deterministic local tool routes still work. Run tooling-showcase doctor if this is unexpected." };
+  }
+  if (/Timed out waiting for Ollama|Ollama.*timed out|Ollama timeout/i.test(content)) {
+    return { title: "Ollama timeout", detail: "Increase Ollama timeout seconds, reduce context/max prediction, warm the model, or choose a smaller model." };
+  }
+  if (/Shell command timed out|Tool .*timed out|tool timeout/i.test(content)) {
+    return { title: "Tool timeout", detail: "Increase Tool timeout seconds or narrow the command/tool request before retrying." };
+  }
+  if (/Failed to reach Ollama|Ollama request failed|Ollama models could not be loaded/i.test(content)) {
+    return { title: "Ollama unreachable", detail: "Start Ollama, check TOOLING_SHOWCASE_OLLAMA_ENDPOINT, then run tooling-showcase doctor." };
+  }
+  return null;
+}
+
+function failureAdviceHtml(message) {
+  const advice = failureAdviceForMessage(message);
+  if (!advice) return "";
+  return `<aside class="failure-advice"><strong>${escapeHtml(advice.title)}</strong><span>${escapeHtml(advice.detail)}</span></aside>`;
 }
 
 function routeModelForText(text) {
@@ -640,6 +695,7 @@ function renderAll() {
   renderMemories();
   renderChat();
   renderRuntimeStatus();
+  renderRuntimePaths();
   renderHelp();
   renderSidebarSessions();
   updatePageChrome();
@@ -726,16 +782,81 @@ function plannerSafeToolCount() {
   return state.tools.map((tool) => toolId(tool)).filter((id) => PLANNER_SAFE_TOOLS.has(id)).length;
 }
 
+function shortPath(path) {
+  const text = String(path || "").trim();
+  if (!text) return "not set";
+  const parts = text.split("/").filter(Boolean);
+  if (parts.length <= 2) return text;
+  return `.../${parts.slice(-2).join("/")}`;
+}
+
+function runtimePathItems() {
+  const paths = state.runtime?.paths || {};
+  return [
+    { label: "Workspace", key: "workspace", path: paths.workspace || state.runtime?.workspace_root || "" },
+    { label: "Portfolio root", key: "portfolio", path: paths.portfolio || state.runtime?.portfolio_root || "" },
+    { label: "Journal path", key: "journal", path: paths.journal || state.runtime?.journal?.path || state.journalStats.path || "" },
+    { label: "Benchmark path", key: "benchmarks", path: paths.benchmarks || state.runtime?.benchmark?.path || state.benchmarkPath || "" }
+  ];
+}
+
+function runtimePathAttribute(key) {
+  const attributes = {
+    workspace: 'data-runtime-path="workspace"',
+    portfolio: 'data-runtime-path="portfolio"',
+    journal: 'data-runtime-path="journal"',
+    benchmarks: 'data-runtime-path="benchmarks"'
+  };
+  return attributes[key] || `data-runtime-path="${escapeHtml(key)}"`;
+}
+
+function ollamaReadiness() {
+  const runtimeOllama = state.runtime?.ollama || {};
+  const enabled = runtimeOllama.enabled ?? state.runtime?.ollama_enabled;
+  const endpoint = state.modelsEndpoint || runtimeOllama.endpoint || state.runtime?.ollama_endpoint || "Ollama endpoint";
+  if (state.modelsOk === null) {
+    return { label: "Ollama", value: "checking", status: "muted", detail: `Checking ${endpoint}` };
+  }
+  if (enabled === false || state.modelsDisabled) {
+    return { label: "Ollama", value: "disabled", status: "warn", detail: "TOOLING_SHOWCASE_OLLAMA_ENABLED=false; deterministic tools still work." };
+  }
+  if (state.modelsOk) {
+    return { label: "Ollama", value: "online", status: "ok", detail: `${state.models.length} local model${state.models.length === 1 ? "" : "s"} from ${endpoint}` };
+  }
+  if (state.modelsErrorType === "timeout") {
+    return { label: "Ollama", value: "timeout", status: "bad", detail: "Ollama inventory timed out; increase Ollama timeout or start a smaller model." };
+  }
+  return { label: "Ollama", value: "unreachable", status: "bad", detail: state.modelsError || `Start Ollama or check ${endpoint}.` };
+}
+
+function benchmarkReadiness() {
+  const profileCount = state.benchmarkProfiles.length || Number(state.runtime?.benchmark?.profile_count || 0);
+  const benchmarkPath = state.runtime?.benchmark?.path || state.benchmarkPath || "state/model_benchmarks.json";
+  if (profileCount > 0) {
+    return { label: "Benchmarks", value: `${profileCount} profile${profileCount === 1 ? "" : "s"}`, status: "ok", detail: `Using ${benchmarkPath}` };
+  }
+  return { label: "Benchmarks", value: "missing", status: "warn", detail: `Run tooling-showcase benchmark --limit-tasks 2; writes ${benchmarkPath}` };
+}
+
+function doctorReadiness() {
+  const profileCount = state.benchmarkProfiles.length || Number(state.runtime?.benchmark?.profile_count || 0);
+  const needsDoctor = state.modelsOk === false || !profileCount || !state.tools.length || state.runtime?.ok === false;
+  return { label: "Doctor", value: "run doctor", status: needsDoctor ? "warn" : "muted", detail: "Run tooling-showcase doctor when status is red/yellow or paths look wrong." };
+}
+
 function runtimeReadiness() {
   const selectedModel = $("modelSelect")?.value || "auto route";
   const toolTotal = state.tools.length || state.runtime?.tools?.length || 0;
   const journalKnown = Boolean(state.journalStats.path || state.runtime?.journal?.path || state.journal.length);
   return [
-    { label: "Ollama", value: state.modelsOk === null ? "checking" : state.modelsOk ? "online" : "offline", status: state.modelsOk ? "ok" : state.modelsOk === false ? "bad" : "muted", detail: state.modelsOk ? `${state.models.length} local models` : "start Ollama or check endpoint" },
+    ollamaReadiness(),
     { label: "Model", value: selectedModel, status: selectedModel === "auto route" ? "muted" : "ok", detail: selectedModel === "auto route" ? "server routing enabled" : "manual override" },
+    benchmarkReadiness(),
     { label: "Tools", value: `${plannerSafeToolCount()}/${toolTotal || "-"}`, status: toolTotal ? "ok" : "bad", detail: "planner-safe / runtime" },
+    { label: "Workspace", value: shortPath(runtimePathItems()[0].path), status: runtimePathItems()[0].path ? "muted" : "warn", detail: runtimePathItems()[0].path || "Set TOOLING_SHOWCASE_WORKSPACE or run doctor." },
     { label: "Mode", value: state.settings.mode || "dev", status: "muted", detail: state.settings.mode === "user" ? "clean interface" : "developer surfaces" },
-    { label: "Journal", value: journalKnown ? "active" : "empty", status: "muted", detail: state.journal.length ? `${state.journal.length} events loaded` : "events appear after requests" }
+    { label: "Journal", value: journalKnown ? "active" : "empty", status: "muted", detail: state.journal.length ? `${state.journal.length} events loaded` : "events appear after requests" },
+    doctorReadiness()
   ];
 }
 
@@ -743,10 +864,20 @@ function renderRuntimeStatus() {
   const root = $("runtimeStatusStrip");
   if (!root) return;
   root.innerHTML = runtimeReadiness().map((item) => `
-    <div class="runtime-tile ${item.status}">
+    <div class="runtime-tile ${item.status}" title="${escapeHtml(item.detail)}">
       <span>${escapeHtml(item.label)}</span>
       <strong>${escapeHtml(item.value)}</strong>
       <small>${escapeHtml(item.detail)}</small>
+    </div>`).join("");
+}
+
+function renderRuntimePaths() {
+  const root = $("runtimePathGrid");
+  if (!root) return;
+  root.innerHTML = runtimePathItems().map((item) => `
+    <div class="runtime-path-card" ${runtimePathAttribute(item.key)} title="${escapeHtml(item.path || "not configured")}">
+      <span>${escapeHtml(item.label)}</span>
+      <code>${escapeHtml(item.path || "not configured")}</code>
     </div>`).join("");
 }
 
@@ -758,6 +889,7 @@ async function loadRuntime() {
     state.runtime = { ok: false, error: error.message };
   } finally {
     renderRuntimeStatus();
+    renderRuntimePaths();
   }
 }
 
@@ -1273,6 +1405,31 @@ function researchPlanInputs(message) {
   };
 }
 
+function latestFailedResearchTrace(session = {}) {
+  return [...(session.model_calls || [])].reverse().find((call) => call && call.ok === false) || null;
+}
+
+function researchFailureInfo(session = {}, error = null, fallbackStage = "research.run") {
+  const failedTrace = latestFailedResearchTrace(session);
+  const stage = error?.stage || failedTrace?.stage || session.failure_stage || fallbackStage;
+  const summary = failedTrace?.summary || session.errors?.[0] || error?.message || "Research stopped before producing a report.";
+  const nextAction = failedTrace?.recoverable_next_action || error?.nextAction || error?.next_action || recoverableResearchAction(stage);
+  return { stage, summary, nextAction };
+}
+
+function recoverableResearchAction(stage) {
+  if (stage === "research.plan") return "Edit the goal/model and create the plan again. If Ollama is disabled, deterministic fallback planning should still work.";
+  if (stage === "research.source_plan") return "Retry with a selected model, smaller depth, or a simpler plan that uses local read/search tools.";
+  if (stage === "research.gather_sources") return "Edit the plan to use narrower local sources, or switch hybrid web lookup off before retrying.";
+  if (stage === "research.extract" || stage === "research.expand" || stage === "research.report") return "Increase Ollama timeout or retry with smaller depth/context after running tooling-showcase doctor.";
+  return "Review the research plan, adjust the failing stage, then retry the run.";
+}
+
+function researchFailureContent(prefix, session = {}, error = null, fallbackStage = "research.run") {
+  const failure = researchFailureInfo(session, error, fallbackStage);
+  return `${prefix} during ${failure.stage}: ${failure.summary}\n\nNext action: ${failure.nextAction}`;
+}
+
 async function handleResearchPlanAction(message, action) {
   const sessionId = message.researchPlan?.session?.id;
   if (!sessionId || state.busy) return;
@@ -1302,7 +1459,8 @@ async function updateResearchPlan(message, sessionId) {
     renderChat();
     setRequestStats("research plan updated");
   } catch (error) {
-    setRequestStats(`research update failed: ${error.message}`, { bad: true });
+    const failure = researchFailureInfo(message.researchPlan?.session || {}, error, "research.plan");
+    setRequestStats(`research update failed at ${failure.stage}: ${failure.nextAction}`, { bad: true });
   }
 }
 
@@ -1334,6 +1492,19 @@ async function confirmResearchPlan(message, sessionId) {
     renderChat();
     const data = await researchApi(`/api/research/${encodeURIComponent(sessionId)}/run`, {});
     const session = data.session || {};
+    if (session.status === "failed") {
+      const failure = researchFailureInfo(session, null, "research.run");
+      patchActiveMessageVariant(message, {
+        ok: false,
+        content: researchFailureContent("Research failed", session, null, "research.run"),
+        thinking: (session.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
+        researchPlan: { status: "failed", session },
+        toolCalls: [{ tool_name: "research.run", ok: false, summary: `${failure.stage}: ${failure.summary}`, data: session }],
+        latencyMs: Math.round(performance.now() - started),
+        modelRoute: { category: "research lab", reason: `failed stage: ${failure.stage}` }
+      });
+      return;
+    }
     patchActiveMessageVariant(message, {
       content: session.report || "Research completed without a report.",
       thinking: (session.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
@@ -1347,7 +1518,8 @@ async function confirmResearchPlan(message, sessionId) {
       modelRoute: { category: "research lab", reason: "confirmed plan mode" }
     });
   } catch (error) {
-    patchActiveMessageVariant(message, { ok: false, content: `Research failed: ${error.message}`, researchPlan: { status: "failed", session: message.researchPlan?.session || {} } });
+    const session = message.researchPlan?.session || {};
+    patchActiveMessageVariant(message, { ok: false, content: researchFailureContent("Research failed", session, error, "research.run"), researchPlan: { status: "failed", session } });
   } finally {
     state.busy = false;
     persist();
@@ -1481,11 +1653,13 @@ function renderToolCalls(root, calls, { nested = false } = {}) {
     const rawSummary = call.summary || JSON.stringify(call.data ?? call, null, 2);
     const summary = escapeHtml(String(rawSummary).length > 900 ? `${String(rawSummary).slice(0, 900)}\n... [open details for full output]` : rawSummary);
     const payload = escapeHtml(JSON.stringify(call, null, 2));
+    const hint = toolActionHint(call);
     card.innerHTML = `
       ${nested
         ? `<summary><strong>${escapeHtml(call.tool_name || call.name || "tool")}</strong><span class="${pending ? "" : (call.ok ? "ok-text" : "bad-text")}">${pending ? "running" : (call.ok ? "ok" : "failed")}</span></summary>`
         : `<header><strong>${escapeHtml(call.tool_name || call.name || "tool")}</strong><span class="${pending ? "" : (call.ok ? "ok-text" : "bad-text")}">${pending ? "running" : (call.ok ? "ok" : "failed")}</span></header>`}
       <pre>${summary}</pre>
+      ${hint ? `<p class="tool-action-hint"><strong>Next:</strong> ${escapeHtml(hint)}</p>` : ""}
       <details class="tool-json-box"><summary>JSON</summary><pre>${payload}</pre></details>`;
     card.addEventListener("click", (event) => {
       if (event.target.closest("summary") || event.target.closest(".tool-json-box")) return;
@@ -1622,6 +1796,9 @@ async function loadModels() {
   const select = $("modelSelect");
   select.innerHTML = `<option value="">Auto route</option>`;
   state.modelsOk = null;
+  state.modelsError = "";
+  state.modelsErrorType = "";
+  state.modelsDisabled = false;
   $("modelStatus").textContent = "checking";
   $("modelStatus").className = "status-pill muted";
   let liveModels = [];
@@ -1633,16 +1810,26 @@ async function loadModels() {
     state.models = liveModels;
     state.benchmarks = data.benchmarks && typeof data.benchmarks === "object" ? data.benchmarks : { models: {}, profiles: {} };
     state.benchmarkProfiles = Array.isArray(data.profiles) ? data.profiles : [];
+    state.benchmarkPath = data.benchmark?.path || data.benchmark_path || "";
+    state.modelsError = data.error || "";
+    state.modelsErrorType = data.error_type || "";
+    state.modelsDisabled = Boolean(data.disabled);
+    state.modelsEndpoint = data.endpoint || "";
     state.modelsOk = Boolean(data.ok);
-    $("modelStatus").textContent = data.ok ? `${liveModels.length} local` : "offline";
-    $("modelStatus").className = `status-pill ${data.ok ? "ok" : "bad"}`;
-    if (!data.ok && data.error) renderModelMeta(`Ollama models could not be loaded: ${data.error}`);
+    $("modelStatus").textContent = data.ok ? `${liveModels.length} local` : modelStatusLabel(data);
+    $("modelStatus").className = `status-pill ${data.ok ? "ok" : data.disabled ? "warn" : "bad"}`;
+    if (!data.ok && data.error) renderModelMeta(modelStatusGuidance(data));
   } catch (error) {
     if (requestId !== modelLoadRequestId) return;
     state.modelsOk = false;
     state.models = [];
     state.benchmarks = { models: {}, profiles: {} };
     state.benchmarkProfiles = [];
+    state.benchmarkPath = "";
+    state.modelsError = error.message;
+    state.modelsErrorType = "network";
+    state.modelsDisabled = false;
+    state.modelsEndpoint = "";
     $("modelStatus").textContent = "offline";
     $("modelStatus").className = "status-pill bad";
     renderModelMeta(`Model endpoint unavailable: ${error.message}`);
@@ -1663,6 +1850,22 @@ async function loadModels() {
   appendBenchmarkProfileOptions(select, seen, { includeDisabled: true });
   updateModelMeta();
   renderRuntimeStatus();
+}
+
+function modelStatusLabel(data) {
+  if (data?.disabled) return "disabled";
+  if (data?.error_type === "timeout") return "timeout";
+  return "offline";
+}
+
+function modelStatusGuidance(data) {
+  if (data?.disabled) {
+    return "Ollama is disabled by TOOLING_SHOWCASE_OLLAMA_ENABLED=false. Deterministic local tool routes still work; re-enable Ollama for open-ended model replies. Run tooling-showcase doctor if this is unexpected.";
+  }
+  if (data?.error_type === "timeout") {
+    return `Ollama model inventory timed out at ${data.endpoint || "the configured endpoint"}. Increase Ollama timeout, start a smaller model, or run tooling-showcase doctor.`;
+  }
+  return `Ollama models could not be loaded from ${data?.endpoint || "the configured endpoint"}: ${data?.error || "unknown error"}. Start Ollama, check TOOLING_SHOWCASE_OLLAMA_ENDPOINT, then run tooling-showcase doctor.`;
 }
 
 function refreshVisibleData() {
@@ -2477,6 +2680,20 @@ async function runRetryFromDialog() {
       renderChat();
       const data = await researchApi(`/api/research/${encodeURIComponent(researchPlan.id)}/run`, {});
       const sessionData = data.session || {};
+      if (sessionData.status === "failed") {
+        const failure = researchFailureInfo(sessionData, null, "research.run");
+        patchActiveMessageVariant(message, {
+          ok: false,
+          content: researchFailureContent("Research retry failed", sessionData, null, "research.run"),
+          thinking: (sessionData.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
+          researchPlan: { status: "failed", session: sessionData },
+          toolCalls: [{ tool_name: "research.run", ok: false, summary: `${failure.stage}: ${failure.summary}`, data: sessionData }],
+          latencyMs: Math.round(performance.now() - started),
+          model: researchModel || message.model || "auto",
+          modelRoute: { category: "research lab", reason: `failed stage: ${failure.stage}` }
+        });
+        return;
+      }
       patchActiveMessageVariant(message, {
         content: sessionData.report || "Research completed without a report.",
         thinking: (sessionData.plan || []).map((item, index) => `${index + 1}. ${item}`).join("\n"),
@@ -2491,7 +2708,7 @@ async function runRetryFromDialog() {
         modelRoute: { category: "research lab", reason: `retry mode: ${researchMode}` }
       });
     } catch (error) {
-      patchActiveMessageVariant(message, { ok: false, content: `Research retry failed: ${error.message}`, researchPlan: { status: "failed", session: researchPlan } });
+      patchActiveMessageVariant(message, { ok: false, content: researchFailureContent("Research retry failed", researchPlan, error, "research.run"), researchPlan: { status: "failed", session: researchPlan } });
     } finally {
       state.busy = false;
       persist();
@@ -2600,11 +2817,30 @@ async function runManualTool() {
   }
 
   const call = result.tool_call || result;
-  root.innerHTML = `<pre>${escapeHtml(JSON.stringify(call, null, 2))}</pre>`;
+  root.innerHTML = manualToolResultHtml(call);
   root.onclick = () => openToolCallDetail(call);
   addSessionMessage("tool", `${tool}: ${call.ok ? "ok" : "failed"}`, { toolCalls: [call] });
   renderChat();
   await loadJournal();
+}
+
+function manualToolResultHtml(call) {
+  const hint = toolActionHint(call) || manualToolGuidance(call);
+  return `
+    <div class="manual-tool-summary ${call.ok ? "ok" : "bad"}">
+      <strong>${escapeHtml(call.ok ? "Tool completed" : "Tool failed")}</strong>
+      <span>${escapeHtml(call.summary || "No summary returned.")}</span>
+    </div>
+    ${hint ? `<p class="tool-action-hint"><strong>Next:</strong> ${escapeHtml(hint)}</p>` : ""}
+    <pre>${escapeHtml(JSON.stringify(call, null, 2))}</pre>`;
+}
+
+function manualToolGuidance(call) {
+  const data = call?.data && typeof call.data === "object" ? call.data : {};
+  if (data.next_action) return data.next_action;
+  if (data.hint) return data.hint;
+  if (call?.ok === false) return "Check the arguments JSON and runtime status, then retry. Run tooling-showcase doctor if the failure is environmental.";
+  return "";
 }
 
 async function runManualToolFallback(tool, args) {
@@ -2613,7 +2849,7 @@ async function runManualToolFallback(tool, args) {
       tool_name: tool,
       ok: false,
       summary: "/api/tool failed or is unavailable. Refusing to fallback to /api/ask because that would start a hidden model request.",
-      data: { fallback: false, arguments: args }
+      data: { fallback: false, arguments: args, next_action: "Serve the UI through tooling-showcase serve. If the server is bound remotely, use loopback or explicitly opt in to the manual tool API on a trusted network." }
     }
   };
 }
@@ -4004,7 +4240,7 @@ async function runComposerResearch(goalText = "") {
     renderMessageActions(assistantNode, assistantMessage);
     assistantNode.classList.toggle("failed", false);
   } catch (error) {
-    patchActiveMessageVariant(assistantMessage, { ok: false, content: `Research failed: ${error.message}` });
+    patchActiveMessageVariant(assistantMessage, { ok: false, content: researchFailureContent("Research failed", {}, error, "research.plan"), researchPlan: { status: "failed", session: {} } });
     assistantNode.classList.toggle("failed", true);
   } finally {
     patchActiveMessageVariant(assistantMessage, { latencyMs: Math.round(performance.now() - started) });
@@ -4068,6 +4304,12 @@ async function researchApi(path, payload = null) {
     : { method: "GET" };
   const res = await fetch(path, options);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.ok === false) throw new Error(data.error || `Research API failed with HTTP ${res.status}`);
+  if (!res.ok || data.ok === false) {
+    const error = new Error(data.error || `Research API failed with HTTP ${res.status}`);
+    error.stage = data.stage || "research.api";
+    error.nextAction = data.next_action || recoverableResearchAction(error.stage);
+    error.payload = data;
+    throw error;
+  }
   return data;
 }

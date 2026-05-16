@@ -46,6 +46,27 @@ python -m pip install -e ".[dev]"
 Write-Host "Running Python tests..." -ForegroundColor Yellow
 python -m pytest tests/
 
+$NodeCommand = Get-Command node -ErrorAction SilentlyContinue
+if ($NodeCommand) {
+    Write-Host "Running frontend JavaScript syntax check..." -ForegroundColor Yellow
+    node --check src/tooling_showcase/static/app-data.js
+    node --check src/tooling_showcase/static/markdown.js
+    node --check src/tooling_showcase/static/app.js
+} else {
+    Write-Host "Skipping JavaScript syntax check: node not found." -ForegroundColor Yellow
+}
+
+Write-Host "Running doctor..." -ForegroundColor Yellow
+tooling-showcase doctor
+
+Write-Host "Checking local Ollama model inventory..." -ForegroundColor Yellow
+$BenchmarkSummary = python -m tooling_showcase.cli benchmark --shell-summary 2>$null
+if ($LASTEXITCODE -eq 0) {
+    $BenchmarkSummary | ForEach-Object { Write-Host $_ }
+} else {
+    Write-Host "Ollama model inventory is unavailable. Start Ollama and run tooling-showcase benchmark later if you want model profiles." -ForegroundColor Yellow
+}
+
 Write-Host ""
 Write-Host "Install complete." -ForegroundColor Green
 Write-Host ""

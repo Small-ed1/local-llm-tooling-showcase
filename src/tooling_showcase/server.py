@@ -71,6 +71,7 @@ def run_server(
                 "/api/research/list",
                 "/api/journal/clear",
                 "/api/journal/delete",
+                "/api/chat",
             }:
                 self.send_response(HTTPStatus.OK)
                 self.end_headers()
@@ -106,7 +107,14 @@ def run_server(
 
             if clean_path == "/api/runtime":
                 events = service.recent_events(limit=100)
-                self._send_json(_runtime_info(service, events))
+                self._send_json(
+                    _runtime_info(
+                        service,
+                        events,
+                        host=host,
+                        manual_tool_api_enabled=manual_tool_api_enabled,
+                    )
+                )
                 return
 
             if clean_path in {"/api/research", "/api/research/list"}:
@@ -161,7 +169,7 @@ def run_server(
                     )
                     self._send_json({"ok": True, "session": session})
                 except Exception as exc:
-                    self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    self._send_json(_research_error_payload(exc, stage="research.plan"), status=HTTPStatus.BAD_REQUEST)
                 return
 
             if clean_path == "/api/research/run":
@@ -171,9 +179,9 @@ def run_server(
                     session = research_lab.run(session_id)
                     self._send_json({"ok": True, "session": session})
                 except FileNotFoundError as exc:
-                    self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                    self._send_json(_research_error_payload(exc, stage="research.load"), status=HTTPStatus.NOT_FOUND)
                 except Exception as exc:
-                    self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    self._send_json(_research_error_payload(exc, stage="research.run"), status=HTTPStatus.BAD_REQUEST)
                 return
 
             if clean_path.startswith("/api/research/"):
@@ -185,9 +193,9 @@ def run_server(
                         session = research_lab.run(session_id)
                         self._send_json({"ok": True, "session": session})
                     except FileNotFoundError as exc:
-                        self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                        self._send_json(_research_error_payload(exc, stage="research.load"), status=HTTPStatus.NOT_FOUND)
                     except Exception as exc:
-                        self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                        self._send_json(_research_error_payload(exc, stage="research.run"), status=HTTPStatus.BAD_REQUEST)
                     return
 
                 if action == "update":
@@ -203,9 +211,9 @@ def run_server(
                         )
                         self._send_json({"ok": True, "session": session})
                     except FileNotFoundError as exc:
-                        self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                        self._send_json(_research_error_payload(exc, stage="research.load"), status=HTTPStatus.NOT_FOUND)
                     except Exception as exc:
-                        self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                        self._send_json(_research_error_payload(exc, stage="research.plan"), status=HTTPStatus.BAD_REQUEST)
                     return
 
                 if action == "stop":
@@ -229,7 +237,7 @@ def run_server(
                 self._send_json({"ok": deleted, "deleted": deleted})
                 return
 
-            if clean_path == "/api/ask":
+            if clean_path in {"/api/ask", "/api/chat"}:
                 payload = self._read_json_body()
                 text = str(payload.get("text", "")).strip()
                 confirm = bool(payload.get("confirm", False))
@@ -254,7 +262,7 @@ def run_server(
                             options=options,
                             response_format=response_format,
                             messages=messages,
-                            allow_tools=bool(payload.get("allow_tools", False)),
+                            allow_tools=bool(payload.get("allow_tools", True)),
                             max_tool_calls=_safe_int(payload.get("max_tool_calls"), 4, minimum=0, maximum=12),
                             show_tool_traces=bool(payload.get("show_tool_traces", False)),
                             ollama_timeout_seconds=ollama_timeout_seconds,
@@ -274,7 +282,7 @@ def run_server(
                         options=options,
                         response_format=response_format,
                         messages=messages,
-                        allow_tools=bool(payload.get("allow_tools", False)),
+                        allow_tools=bool(payload.get("allow_tools", True)),
                         max_tool_calls=_safe_int(payload.get("max_tool_calls"), 4, minimum=0, maximum=12),
                         show_tool_traces=bool(payload.get("show_tool_traces", False)),
                         ollama_timeout_seconds=ollama_timeout_seconds,
@@ -617,22 +625,41 @@ def _call_service_stream(service: ShowcaseService, text: str, **kwargs):
 
 def _load_ollama_models(service: ShowcaseService) -> dict:
     tags_url = _ollama_tags_url(service.config.ollama.endpoint)
-    request = Request(tags_url, method="GET")
     benchmark_path = default_benchmark_path(service.config)
     benchmark_results = load_benchmark_results(benchmark_path)
     benchmark_models = benchmark_results.get("models", {}) if isinstance(benchmark_results.get("models"), dict) else {}
     profiles = benchmark_profiles(benchmark_path)
+    benchmark_meta = _benchmark_metadata(benchmark_path, benchmark_results, profiles)
+
+    if not service.config.ollama.enabled:
+        return {
+            "ok": False,
+            "models": [],
+            "profiles": profiles,
+            "benchmarks": benchmark_results,
+            "benchmark": benchmark_meta,
+            "benchmark_path": str(benchmark_path),
+            "disabled": True,
+            "error_type": "disabled",
+            "error": "Ollama is disabled by TOOLING_SHOWCASE_OLLAMA_ENABLED=false.",
+            "endpoint": tags_url,
+        }
+
+    request = Request(tags_url, method="GET")
 
     try:
         with urlopen(request, timeout=service.config.ollama.timeout_seconds) as response:
             raw = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        return {"ok": False, "models": [], "profiles": profiles, "benchmarks": benchmark_results, "error": f"Ollama HTTP {exc.code}: {body}", "endpoint": tags_url}
+        return {"ok": False, "models": [], "profiles": profiles, "benchmarks": benchmark_results, "benchmark": benchmark_meta, "benchmark_path": str(benchmark_path), "error_type": "http", "error": f"Ollama HTTP {exc.code}: {body}", "endpoint": tags_url}
     except URLError as exc:
-        return {"ok": False, "models": [], "profiles": profiles, "benchmarks": benchmark_results, "error": f"Failed to reach Ollama: {exc}", "endpoint": tags_url}
+        error_type = "timeout" if _is_timeout_error(getattr(exc, "reason", None)) else "unreachable"
+        return {"ok": False, "models": [], "profiles": profiles, "benchmarks": benchmark_results, "benchmark": benchmark_meta, "benchmark_path": str(benchmark_path), "error_type": error_type, "error": f"Failed to reach Ollama: {exc}", "endpoint": tags_url}
+    except TimeoutError as exc:
+        return {"ok": False, "models": [], "profiles": profiles, "benchmarks": benchmark_results, "benchmark": benchmark_meta, "benchmark_path": str(benchmark_path), "error_type": "timeout", "error": f"Timed out waiting for Ollama model inventory: {exc}", "endpoint": tags_url}
     except json.JSONDecodeError as exc:
-        return {"ok": False, "models": [], "profiles": profiles, "benchmarks": benchmark_results, "error": f"Invalid Ollama model JSON: {exc}", "endpoint": tags_url}
+        return {"ok": False, "models": [], "profiles": profiles, "benchmarks": benchmark_results, "benchmark": benchmark_meta, "benchmark_path": str(benchmark_path), "error_type": "invalid_json", "error": f"Invalid Ollama model JSON: {exc}", "endpoint": tags_url}
 
     models = []
     for item in raw.get("models", []):
@@ -653,7 +680,25 @@ def _load_ollama_models(service: ShowcaseService) -> dict:
         )
 
     models.sort(key=lambda item: item["name"].lower())
-    return {"ok": True, "models": models, "profiles": profiles, "benchmarks": benchmark_results, "endpoint": tags_url}
+    return {"ok": True, "models": models, "profiles": profiles, "benchmarks": benchmark_results, "benchmark": benchmark_meta, "benchmark_path": str(benchmark_path), "endpoint": tags_url}
+
+
+def _benchmark_metadata(path: Path, results: dict, profiles: list[dict]) -> dict:
+    models = results.get("models", {}) if isinstance(results.get("models"), dict) else {}
+    return {
+        "path": str(path),
+        "exists": path.exists(),
+        "model_count": len(models),
+        "profile_count": len(profiles),
+        "profiles_missing": not profiles,
+        "next_action": "Run tooling-showcase benchmark --limit-tasks 2 for a quick profile smoke run." if not profiles else "Benchmark profiles are available for model routing.",
+    }
+
+
+def _is_timeout_error(value) -> bool:
+    if isinstance(value, TimeoutError):
+        return True
+    return "timed out" in str(value or "").lower()
 
 
 def _ollama_tags_url(endpoint: str) -> str:
@@ -847,20 +892,54 @@ def _event_ok(event: dict):
     return value
 
 
-def _runtime_info(service: ShowcaseService, events: list[dict]) -> dict:
+def _runtime_info(
+    service: ShowcaseService,
+    events: list[dict],
+    *,
+    host: str | None = None,
+    manual_tool_api_enabled: bool | None = None,
+) -> dict:
     structure = service.tools.tool_structure()
+    benchmark_path = default_benchmark_path(service.config)
+    benchmark_results = load_benchmark_results(benchmark_path)
+    profiles = benchmark_profiles(benchmark_path)
+    paths = {
+        "workspace": str(service.config.workspace_root),
+        "portfolio": str(service.config.portfolio_root),
+        "journal": str(service.config.journal_path),
+        "benchmarks": str(benchmark_path),
+    }
     return {
         "ok": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "project_root": str(service.config.project_root),
         "workspace_root": str(service.config.workspace_root),
         "portfolio_root": str(service.config.portfolio_root),
+        "paths": paths,
         "journal": _journal_stats(service, events),
+        "benchmark": _benchmark_metadata(benchmark_path, benchmark_results, profiles),
         "tools": _tool_cards(service.tools.available_tools()),
         "adapters": _adapter_cards(service, events),
         "ollama_endpoint": service.config.ollama.endpoint,
+        "ollama_enabled": service.config.ollama.enabled,
         "ollama_timeout_seconds": service.config.ollama.timeout_seconds,
         "tool_timeout_seconds": service.config.shell_policy.timeout_seconds,
+        "ollama": {
+            "enabled": service.config.ollama.enabled,
+            "endpoint": service.config.ollama.endpoint,
+            "timeout_seconds": service.config.ollama.timeout_seconds,
+        },
+        "manual_tool_api": {
+            "enabled": bool(manual_tool_api_enabled) if manual_tool_api_enabled is not None else None,
+            "host": host,
+            "loopback_required_unless_opted_in": True,
+            "opt_in": "--enable-remote-tool-api or TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API=1",
+        },
+        "doctor": {
+            "command": "tooling-showcase doctor",
+            "json_command": "tooling-showcase doctor --json",
+            "next_action": "Run tooling-showcase doctor when model, path, tool, or static UI status looks wrong.",
+        },
         "permissions": {
             "planner_visible_tools": (structure.data or {}).get("planner_visible", []),
             "manual_only_tools": (structure.data or {}).get("manual_only", []),
@@ -1082,10 +1161,32 @@ def _manual_tool_api_enabled(host: str, *, enable_remote_tool_api: bool = False)
 def _manual_tool_api_disabled_payload(host: str) -> dict:
     return {
         "ok": False,
-        "error": "Manual tool execution is disabled for non-loopback server binds.",
+        "error": "Manual /api/tool execution is disabled because the server is not bound to a loopback host.",
+        "error_type": "manual_tool_api_disabled",
         "host": host,
+        "reason": "Manual tool calls can mutate local files or run guarded actions, so remote binds require an explicit trusted-network opt-in.",
+        "loopback_hosts": ["127.0.0.1", "localhost", "::1"],
+        "opt_in": "--enable-remote-tool-api or TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API=1",
+        "next_action": "Use --host 127.0.0.1 for local-only access, or opt in with --enable-remote-tool-api / TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API=1 only on a trusted network.",
         "hint": "Use --host 127.0.0.1, or pass --enable-remote-tool-api or set TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API=1 only on a trusted network.",
     }
+
+
+def _research_error_payload(exc: Exception, *, stage: str) -> dict:
+    return {
+        "ok": False,
+        "error": str(exc),
+        "stage": stage,
+        "next_action": _research_next_action(stage),
+    }
+
+
+def _research_next_action(stage: str) -> str:
+    if stage in {"research.load", "research.plan"}:
+        return "Refresh the research panel, verify the goal/model, then create or update the plan again."
+    if stage == "research.run":
+        return "Retry with a narrower plan or smaller depth; if Ollama is involved, run tooling-showcase doctor and check Ollama timeout settings."
+    return "Review the failed stage, adjust the plan or runtime settings, then retry the research run."
 
 
 def _first(values):

@@ -38,7 +38,11 @@ def test_research_lab_creates_and_runs_local_session(tmp_path):
         "research.report",
     ]
     assert complete["iterations"] and len(complete["iterations"]) == 2
-    assert (tmp_path / "state" / "research" / "sessions" / f"{session['id']}.json").exists()
+    research_root = tmp_path / "state" / "research"
+    assert (research_root / "sessions" / f"{session['id']}.json").exists()
+    assert (research_root / "reports" / f"{session['id']}.md").exists()
+    assert not (tmp_path / "state" / f"{session['id']}.json").exists()
+    assert not (tmp_path / "state" / f"{session['id']}.md").exists()
 
 
 def test_research_lab_updates_planned_session(tmp_path):

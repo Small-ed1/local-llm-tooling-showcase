@@ -303,13 +303,27 @@ def extract_latest_user_text(payload: dict) -> str:
 def build_service_request_text(payload: dict) -> str:
     latest = extract_latest_user_text(payload)
     messages = payload.get("messages") or []
+    latest_user_index = None
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") != "user":
+            continue
+        content = str(message.get("content", "")).strip()
+        if content:
+            latest_user_index = index
+            break
     context_lines: list[str] = []
-    for message in messages[-8:]:
+    start_index = max(0, len(messages) - 8)
+    for offset, message in enumerate(messages[start_index:], start=start_index):
         if not isinstance(message, dict):
             continue
         role = str(message.get("role", "")).strip()
         content = str(message.get("content", "")).strip()
         if not role or not content or role == "system":
+            continue
+        if offset == latest_user_index:
             continue
         context_lines.append(f"{role}: {content}")
     if context_lines:
@@ -321,7 +335,7 @@ def build_service_request_text(payload: dict) -> str:
             + "\n\nUse local and web tools when they help answer accurately."
         )
     if latest:
-        return latest + "\n\nUse local and web tools when they help answer accurately."
+        return latest
     return "Use local and web tools when they help answer accurately."
 
 

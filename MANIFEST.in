@@ -1,0 +1,21 @@
+include AGENTS.md
+include CHANGELOG.md
+include CONTRIBUTING.md
+include LICENSE
+include README.md
+include SAFETY.md
+include SAFETY_MODEL.md
+include SECURITY.md
+include install-windows.ps1
+include install.sh
+include start-servers.sh
+recursive-include docs *
+recursive-include examples *
+recursive-include scripts *
+recursive-include src/tooling_showcase/static *
+recursive-include tests *.py
+prune state
+prune dist
+prune build
+prune .venv
+prune .ruff_cache

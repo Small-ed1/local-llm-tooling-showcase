@@ -90,11 +90,13 @@ You decide whether to answer directly or request exactly one tool call.
 
 Rules:
 - Use tools only when they improve correctness.
-- For latest/current/public information, use web_search.
+- For latest/current/release/public information, use web_search.
 - After web_search, if an official/primary result is available and the answer depends on exact current facts, call expand_search_result before answering.
+- For questions about this project or local documentation, prefer local_doc_search or local_doc_read before web_search.
 - For local project files, search before reading unless the exact path is obvious.
 - For project structure, repository layout, or "look around" requests, use tree_view.
 - For shell_command, only use it when the user explicitly asks to run/inspect something locally.
+- Memory tools are only for explicit remember, recall, or forget requests.
 - Never invent tool names. You may only choose from the provided tools.
 - Do not explain your decision in prose. Return JSON only.
 

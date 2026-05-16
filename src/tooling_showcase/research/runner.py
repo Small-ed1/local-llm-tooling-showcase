@@ -33,6 +33,7 @@ class ResearchRunner:
         session.updated_at = utc_now()
         self.storage.save(session)
 
+        current_stage = "research.run"
         try:
             session.iterations = []
             all_sources = []
@@ -42,16 +43,19 @@ class ResearchRunner:
 
             for cycle in range(1, cycles + 1):
                 session.plan = list(session.plan or self.planner.plan(session.goal, mode=session.mode, depth=session.depth))
+                current_stage = "research.source_plan"
                 tool_plan, source_trace = modeler.source_plan(session, fallback=self.planner.tool_plan(session))
                 source_trace["cycle"] = cycle
                 session.model_calls.append(source_trace)
 
+                current_stage = "research.gather_sources"
                 cycle_sources = self.sources.gather(tool_plan)
                 all_sources.extend(cycle_sources)
                 session.sources = list(all_sources)
 
                 session.findings = self.extractor.findings(session)
                 session.claims = self.extractor.claims(session)
+                current_stage = "research.extract"
                 model_claims, model_findings, extract_trace = modeler.extract(session)
                 extract_trace["cycle"] = cycle
                 session.model_calls.append(extract_trace)
@@ -78,6 +82,7 @@ class ResearchRunner:
 
                 if cycle < cycles:
                     fallback = self._next_plan_fallback(session, notes, cycle=cycle, total_cycles=cycles)
+                    current_stage = "research.expand"
                     session.plan, expand_trace = modeler.expand(session, verification_notes=notes, fallback=fallback)
                     expand_trace["cycle"] = cycle
                     session.model_calls.append(expand_trace)
@@ -86,6 +91,7 @@ class ResearchRunner:
             session.claims = self._unique_text(all_claims or session.claims)
             session.findings = self._unique_text(all_findings or session.findings)
             notes = self.verifier.verify(session) + self._unique_text(all_notes)
+            current_stage = "research.report"
             model_report, report_trace = modeler.report(session, verification_notes=notes)
             session.model_calls.append(report_trace)
             session.status = "complete"
@@ -96,6 +102,15 @@ class ResearchRunner:
         except Exception as exc:
             session.status = "failed"
             session.errors.append(str(exc))
+            session.model_calls.append(
+                {
+                    "stage": current_stage,
+                    "ok": False,
+                    "at": utc_now(),
+                    "summary": str(exc),
+                    "recoverable_next_action": self._recoverable_next_action(current_stage),
+                }
+            )
 
         session.updated_at = utc_now()
         return self.storage.save(session)
@@ -130,3 +145,10 @@ class ResearchRunner:
             if step not in base:
                 base.append(step)
         return base[:7]
+
+    def _recoverable_next_action(self, stage: str) -> str:
+        if stage == "research.gather_sources":
+            return "Edit the plan to use narrower local sources or switch hybrid web lookup off, then retry."
+        if stage in {"research.source_plan", "research.extract", "research.expand", "research.report"}:
+            return "Run doctor, check Ollama reachability/timeout settings, then retry with a smaller depth or selected model."
+        return "Review the failed stage, adjust the research plan, and retry the run."

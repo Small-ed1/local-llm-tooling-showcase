@@ -394,7 +394,8 @@
           title: "When to inspect tools manually",
           body: [
             "Use the manual tool console when debugging route behavior, checking JSON argument shapes, confirming tool output, or demonstrating what the runtime can reach.",
-            "For normal usage, prefer asking in chat. If the chat result seems wrong, switch to developer mode and check the journal or manual tool output."
+            "For normal usage, prefer asking in chat. If the chat result seems wrong, switch to developer mode and check the journal or manual tool output.",
+            "Remote /api/tool calls are disabled unless the server is bound to loopback or you explicitly opt in with --enable-remote-tool-api or TOOLING_SHOWCASE_ENABLE_REMOTE_TOOL_API=1 on a trusted network."
           ]
         }
       ],
