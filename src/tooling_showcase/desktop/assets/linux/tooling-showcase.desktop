@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Local LLM Tooling Showcase
+Comment=Open the local Local LLM Tooling Showcase web UI
+Exec=tooling-showcase open
+Terminal=false
+Categories=Development;Utility;
+StartupNotify=true
+X-ToolingShowcase=1

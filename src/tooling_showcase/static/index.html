@@ -321,6 +321,7 @@
         <button class="settings-tab" data-settings-tab="profile">Profile</button>
         <button class="settings-tab" data-settings-tab="memory">Memory</button>
         <button class="settings-tab" data-settings-tab="interface">Interface</button>
+        <button class="settings-tab" data-settings-tab="desktop">Desktop</button>
         <button class="settings-tab" data-settings-tab="data">Data</button>
       </nav>
 
@@ -533,6 +534,30 @@
           <h3>Browser UI state</h3>
           <p>This removes local browser sessions, memories, and settings. Backend files and journal are untouched.</p>
           <button id="settingsClearBrowserBtn" class="danger-button">Clear browser UI state...</button>
+        </section>
+      </div>
+
+      <div class="settings-tab-panel" data-settings-panel="desktop">
+        <div class="settings-grid">
+          <section class="settings-section">
+            <h3>Desktop Integration</h3>
+            <p class="field-help">Optional user-level launcher and service integration. Normal browser UI and CLI usage work without it.</p>
+            <div id="desktopStatusSummary" class="stat-stack"></div>
+          </section>
+          <section class="settings-section">
+            <h3>Manage From Terminal</h3>
+            <p class="field-help">For v1.1.0, install, repair, and remove stay terminal-only so OS changes remain explicit and local.</p>
+            <div class="desktop-command-list">
+              <code>tooling-showcase desktop install</code>
+              <code>tooling-showcase desktop repair</code>
+              <code>tooling-showcase desktop uninstall</code>
+              <code>tooling-showcase desktop logs</code>
+            </div>
+          </section>
+        </div>
+        <section class="settings-section wide">
+          <h3>Status Details</h3>
+          <div id="desktopStatusDetails" class="desktop-status-details"></div>
         </section>
       </div>
 

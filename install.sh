@@ -4,11 +4,56 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+DESKTOP_MODE="prompt"
+ASSUME_YES=0
+
+usage() {
+  cat <<'USAGE'
+Usage: ./install.sh [--with-desktop|--no-desktop|--desktop-only|--repair-desktop] [--yes]
+
+Desktop integration is optional and user-level. It installs a launcher and service where supported, without enabling autostart by default. --desktop-only and --repair-desktop run only that desktop action and exit.
+USAGE
+}
+
+while (($#)); do
+  case "$1" in
+    --with-desktop)
+      DESKTOP_MODE="with"
+      ;;
+    --no-desktop)
+      DESKTOP_MODE="no"
+      ;;
+    --desktop-only)
+      DESKTOP_MODE="only"
+      ;;
+    --repair-desktop)
+      DESKTOP_MODE="repair"
+      ;;
+    --yes|-y)
+      ASSUME_YES=1
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      usage
+      exit 2
+      ;;
+  esac
+  shift
+done
+
 ask_yes_no() {
   local prompt="$1"
   local default="${2:-y}"
   local suffix="[y/N]"
   [[ "$default" == "y" ]] && suffix="[Y/n]"
+  if [[ "$ASSUME_YES" == "1" ]]; then
+    [[ "$default" == "y" ]]
+    return
+  fi
   local reply
   read -r -p "$prompt $suffix " reply || reply=""
   reply="${reply:-$default}"
@@ -51,6 +96,29 @@ if ! PYTHON_BIN="$(pick_python)"; then
 fi
 
 echo "Using Python: $PYTHON_BIN"
+
+run_showcase_cli() {
+  if "$PYTHON_BIN" -c 'import tooling_showcase' >/dev/null 2>&1; then
+    "$PYTHON_BIN" -m tooling_showcase.cli "$@"
+  else
+    PYTHONPATH=src "$PYTHON_BIN" -m tooling_showcase.cli "$@"
+  fi
+}
+
+if [[ "$DESKTOP_MODE" == "only" || "$DESKTOP_MODE" == "repair" ]]; then
+  if [[ -f .venv/bin/activate ]]; then
+    # shellcheck disable=SC1091
+    . .venv/bin/activate
+    PYTHON_BIN="python"
+  fi
+  if [[ "$DESKTOP_MODE" == "repair" ]]; then
+    run_showcase_cli desktop repair
+    exit $?
+  else
+    run_showcase_cli desktop install
+    exit $?
+  fi
+fi
 
 if ask_yes_no "Create or reuse .venv?" "y"; then
   if [[ ! -d .venv ]]; then
@@ -104,5 +172,22 @@ elif (( MODEL_COUNT > 3 )); then
 else
   echo "Detected ${MODEL_COUNT} Ollama models. Benchmark prompt appears once more than 3 models are installed."
 fi
+
+case "$DESKTOP_MODE" in
+  with)
+    echo "Installing optional desktop integration (user-level launcher/service; autostart disabled)."
+    run_showcase_cli desktop install
+    ;;
+  no)
+    echo "Skipping optional desktop integration."
+    ;;
+  prompt)
+    if ask_yes_no "Install optional desktop integration? This adds a user-level launcher and service, without autostart." "n"; then
+      run_showcase_cli desktop install
+    else
+      echo "Skipping optional desktop integration. Manage later with: tooling-showcase desktop status/install/repair/uninstall"
+    fi
+    ;;
+esac
 
 echo "Setup complete. Run: tooling-showcase serve"

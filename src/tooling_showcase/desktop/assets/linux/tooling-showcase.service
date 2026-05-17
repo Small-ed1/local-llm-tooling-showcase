@@ -1,0 +1,16 @@
+[Unit]
+Description=Local LLM Tooling Showcase web UI
+Documentation=https://github.com/Small-ed1/local-llm-tooling-showcase
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+ExecStart=tooling-showcase serve --host 127.0.0.1 --port 8123
+Restart=on-failure
+RestartSec=2
+StandardOutput=append:%h/.local/share/tooling-showcase/logs/server.log
+StandardError=append:%h/.local/share/tooling-showcase/logs/server.log
+
+[Install]
+WantedBy=default.target

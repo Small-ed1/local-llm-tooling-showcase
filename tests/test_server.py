@@ -154,6 +154,23 @@ def test_manual_tool_api_loopback_works_and_remote_bind_blocks(tmp_path: Path):
     assert "disabled" in data["error"]
 
 
+def test_desktop_status_endpoint_returns_json(tmp_path: Path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    service = _make_service(tmp_path / "desktop-endpoint", ollama_enabled=False)
+    base_url = _start_server(service)
+
+    with urlopen(f"{base_url}/api/desktop/status", timeout=5) as response:
+        data = json.loads(response.read().decode("utf-8"))
+
+    assert response.status == HTTPStatus.OK
+    assert data["ok"] is True
+    assert data["desktop"]["supported"] is True
+    assert "launcher_installed" in data["desktop"]
+
+
 def _make_service(root: Path, *, ollama_enabled: bool) -> ShowcaseService:
     root.mkdir(parents=True, exist_ok=True)
     workspace = root / "workspace"

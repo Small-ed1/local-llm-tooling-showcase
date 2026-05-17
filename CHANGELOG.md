@@ -4,6 +4,27 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+## v1.1.0 - 2026-05-17
+
+### Added
+
+- Optional desktop/system integration foundation with `tooling-showcase status/open/start/stop/restart/logs` and `tooling-showcase desktop status/install/repair/uninstall/logs/open` commands.
+- Linux user-level launcher and `systemd --user` service installation, repair, status, logs, and clean uninstall support.
+- Read-only desktop/system status endpoints for the web UI, including `/api/desktop/status`.
+- Settings panel section for desktop integration status, log paths, notes, and terminal management commands.
+- Packaged desktop asset stubs for Linux, Windows, and macOS plus `docs/desktop-integration.md` with the v1.1/v1.2/v1.3 roadmap.
+
+### Safety
+
+- Desktop integration is not installed by default and remains user-level unless future explicit admin flows are added.
+- Autostart, file actions, hotkeys, tray helpers, and protocol handlers are not silently enabled.
+- Windows and macOS integrations are recognized safe stubs with no registry, LaunchAgent, startup task, or native shell changes in v1.1.0.
+
+### Packaging
+
+- Package version is promoted to `1.1.0`.
+- Installers add optional desktop flags while preserving the existing default setup behavior.
+
 ## v1.0.0 - 2026-05-16
 
 ### Added

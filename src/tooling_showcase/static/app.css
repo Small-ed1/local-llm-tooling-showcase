@@ -1646,6 +1646,23 @@ body.user-mode .page-nav [data-page-target="journal"] {
 .stat-stack strong { color: var(--accent-2); font-size: 21px; }
 .stat-stack span { color: var(--muted); font-size: 14px; }
 
+.desktop-command-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.desktop-command-list code {
+  display: block;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: var(--code-text);
+  background: var(--surface-dark-22);
+  overflow-wrap: anywhere;
+}
+.desktop-status-details { display: grid; gap: 10px; }
+.desktop-note-list { display: grid; gap: 4px; }
+
 .prompt-settings-grid {
   grid-template-columns: minmax(250px, 0.75fr) minmax(320px, 1.25fr);
 }

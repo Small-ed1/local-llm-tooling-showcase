@@ -9,9 +9,22 @@ cd local-llm-tooling-showcase
 tooling-showcase serve
 ```
 
-`./install.sh` can create `.venv`, use the first available `python3` or `python` that is version 3.11+, upgrade `pip`, install `.[dev]`, run tests, run the frontend JS syntax check, and prompt for benchmarking when more than three Ollama models are installed.
+`./install.sh` can create `.venv`, use the first available `python3` or `python` that is version 3.11+, upgrade `pip`, install `.[dev]`, run tests, run the frontend JS syntax check, prompt for benchmarking when more than three Ollama models are installed, and optionally install desktop integration.
 
 On Windows, run `.\install-windows.ps1` from PowerShell instead. It uses the repository folder it was launched from, validates Python 3.11+, installs `.[dev]`, and runs the test suite before handing control back.
+
+Optional desktop integration flags:
+
+```bash
+./install.sh --with-desktop
+./install.sh --no-desktop
+./install.sh --desktop-only
+./install.sh --repair-desktop
+```
+
+Windows PowerShell uses `-WithDesktop`, `-NoDesktop`, `-DesktopOnly`, and `-RepairDesktop`. Desktop integration is not installed by default; the interactive prompt defaults to no.
+
+`--desktop-only` and `--repair-desktop` run only the desktop install/repair action and exit without venv creation, tests, frontend checks, or benchmark prompts.
 
 Check the resulting environment with:
 
@@ -55,7 +68,7 @@ pip install dist/local_llm_tooling_showcase-*.whl
 tooling-showcase doctor
 ```
 
-The source distribution includes the source tree plus `install.sh`, `install-windows.ps1`, `start-servers.sh`, `scripts/`, `docs/`, screenshots, examples, and tests through `MANIFEST.in`.
+The source distribution includes the source tree plus `install.sh`, `install-windows.ps1`, `start-servers.sh`, `scripts/`, `docs/`, screenshots, examples, packaged desktop assets, and tests through `MANIFEST.in`.
 
 One-off `pipx` smoke check after building a wheel:
 

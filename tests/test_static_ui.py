@@ -113,6 +113,16 @@ def test_static_ui_exposes_local_runtime_status_guidance():
     assert "tooling-showcase benchmark --limit-tasks 2" in js
 
 
+def test_static_ui_exposes_desktop_integration_status_panel():
+    index = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    js = static_js()
+
+    assert 'data-settings-tab="desktop"' in index
+    assert 'id="desktopStatusSummary"' in index
+    assert "/api/desktop/status" in js
+    assert "tooling-showcase desktop install" in index
+
+
 def test_static_ui_makes_local_failures_actionable():
     js = static_js()
 

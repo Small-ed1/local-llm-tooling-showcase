@@ -1,3 +1,11 @@
+param(
+    [switch]$WithDesktop,
+    [switch]$NoDesktop,
+    [switch]$DesktopOnly,
+    [switch]$RepairDesktop,
+    [switch]$Yes
+)
+
 $ErrorActionPreference = "Stop"
 
 $ProjectPath = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -27,6 +35,50 @@ if ($PythonLauncher) {
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Python 3.11+ is required. Update your Python install and rerun this script." -ForegroundColor Red
     exit 1
+}
+
+function Invoke-ShowcaseCli {
+    param([string[]]$CliArgs)
+
+    $PythonRunner = "python"
+    $PythonPrefix = @()
+    if (!(Get-Command python -ErrorAction SilentlyContinue)) {
+        $PythonRunner = $PythonExe
+        if ($PythonExe -eq "py") {
+            $PythonPrefix = @("-3")
+        }
+    }
+
+    & $PythonRunner @PythonPrefix -c "import tooling_showcase" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        & $PythonRunner @PythonPrefix -m tooling_showcase.cli @CliArgs
+        return
+    }
+
+    $OldPythonPath = $env:PYTHONPATH
+    if ($OldPythonPath) {
+        $env:PYTHONPATH = "src;$OldPythonPath"
+    } else {
+        $env:PYTHONPATH = "src"
+    }
+    try {
+        & $PythonRunner @PythonPrefix -m tooling_showcase.cli @CliArgs
+    } finally {
+        $env:PYTHONPATH = $OldPythonPath
+    }
+}
+
+if ($DesktopOnly -or $RepairDesktop) {
+    if (Test-Path ".venv\Scripts\Activate.ps1") {
+        Write-Host "Activating virtual environment..." -ForegroundColor Yellow
+        .\.venv\Scripts\Activate.ps1
+    }
+    if ($RepairDesktop) {
+        Invoke-ShowcaseCli @("desktop", "repair")
+    } else {
+        Invoke-ShowcaseCli @("desktop", "install")
+    }
+    exit $LASTEXITCODE
 }
 
 if (!(Test-Path ".venv")) {
@@ -65,6 +117,22 @@ if ($LASTEXITCODE -eq 0) {
     $BenchmarkSummary | ForEach-Object { Write-Host $_ }
 } else {
     Write-Host "Ollama model inventory is unavailable. Start Ollama and run tooling-showcase benchmark later if you want model profiles." -ForegroundColor Yellow
+}
+
+if ($WithDesktop) {
+    Write-Host "Installing optional desktop integration (user-level where supported; autostart disabled)." -ForegroundColor Yellow
+    Invoke-ShowcaseCli @("desktop", "install")
+} elseif ($NoDesktop) {
+    Write-Host "Skipping optional desktop integration." -ForegroundColor Yellow
+} elseif ($Yes) {
+    Write-Host "Skipping optional desktop integration by default. Run tooling-showcase desktop install later to opt in." -ForegroundColor Yellow
+} else {
+    $DesktopReply = Read-Host "Install optional desktop integration? This may add a user-level launcher/service where supported, without autostart. [y/N]"
+    if ($DesktopReply -match "^[Yy]$") {
+        Invoke-ShowcaseCli @("desktop", "install")
+    } else {
+        Write-Host "Skipping optional desktop integration. Manage later with tooling-showcase desktop status/install/repair/uninstall." -ForegroundColor Yellow
+    }
 }
 
 Write-Host ""

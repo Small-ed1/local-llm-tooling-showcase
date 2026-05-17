@@ -6,6 +6,18 @@ from pathlib import Path
 
 from tooling_showcase.benchmarking import benchmark_command
 from tooling_showcase.config import load_config
+from tooling_showcase.desktop import (
+    desktop_status,
+    install_desktop,
+    open_local_ui,
+    recent_logs,
+    repair_desktop,
+    restart_backend,
+    start_backend,
+    stop_backend,
+    system_status,
+    uninstall_desktop,
+)
 from tooling_showcase.doctor import run_doctor
 from tooling_showcase.ollama_wrapper import run_ollama_wrapper
 from tooling_showcase.research import ResearchLab
@@ -21,6 +33,63 @@ def build_parser() -> argparse.ArgumentParser:
     def add_timeout_options(command: argparse.ArgumentParser) -> None:
         command.add_argument("--ollama-timeout", type=int, default=None, help="Ollama request timeout in seconds.")
         command.add_argument("--tool-timeout", type=int, default=None, help="Tool execution timeout in seconds.")
+
+    def add_host_port(command: argparse.ArgumentParser) -> None:
+        command.add_argument("--host", default="127.0.0.1", help="Local host to manage. Defaults to loopback.")
+        command.add_argument("--port", type=int, default=8123, help="Local web UI port.")
+
+    status_cmd = sub.add_parser("status", help="Show backend, Ollama, desktop, service, launcher, and platform status")
+    add_host_port(status_cmd)
+    status_cmd.add_argument("--json", action="store_true", help="Print machine-readable status JSON.")
+
+    open_cmd = sub.add_parser("open", help="Open the local web UI in the system browser")
+    add_host_port(open_cmd)
+    open_cmd.add_argument("--no-start", action="store_true", help="Do not start the backend before opening the browser.")
+    open_cmd.add_argument("--json", action="store_true", help="Print machine-readable action JSON.")
+
+    start_cmd = sub.add_parser("start", help="Start the local web UI backend using the user service or a managed process")
+    add_host_port(start_cmd)
+    start_cmd.add_argument("--json", action="store_true", help="Print machine-readable action JSON.")
+
+    stop_cmd = sub.add_parser("stop", help="Stop the local web UI backend if it is managed by this project")
+    add_host_port(stop_cmd)
+    stop_cmd.add_argument("--json", action="store_true", help="Print machine-readable action JSON.")
+
+    restart_cmd = sub.add_parser("restart", help="Restart the local web UI backend")
+    add_host_port(restart_cmd)
+    restart_cmd.add_argument("--json", action="store_true", help="Print machine-readable action JSON.")
+
+    logs_cmd = sub.add_parser("logs", help="Show backend and desktop integration log locations and recent entries")
+    logs_cmd.add_argument("--lines", type=int, default=40, help="Recent lines to print from each log file.")
+    logs_cmd.add_argument("--json", action="store_true", help="Print machine-readable logs JSON.")
+
+    desktop = sub.add_parser("desktop", help="Manage optional desktop/system integration")
+    desktop_sub = desktop.add_subparsers(dest="desktop_command", required=True)
+    desktop_status_cmd = desktop_sub.add_parser("status", help="Show desktop integration status")
+    desktop_status_cmd.add_argument("--json", action="store_true", help="Print machine-readable status JSON.")
+
+    desktop_install = desktop_sub.add_parser("install", help="Install user-level desktop integration assets")
+    desktop_install.add_argument("--dry-run", action="store_true", help="Show the install plan without writing files.")
+    desktop_install.add_argument("--autostart", action="store_true", help="Enable the user service after installing. Disabled by default.")
+    desktop_install.add_argument("--json", action="store_true", help="Print machine-readable action JSON.")
+
+    desktop_uninstall = desktop_sub.add_parser("uninstall", help="Remove project-owned desktop integration files")
+    desktop_uninstall.add_argument("--dry-run", action="store_true", help="Show the uninstall plan without removing files.")
+    desktop_uninstall.add_argument("--json", action="store_true", help="Print machine-readable action JSON.")
+
+    desktop_repair = desktop_sub.add_parser("repair", help="Reinstall or repair missing desktop integration files")
+    desktop_repair.add_argument("--dry-run", action="store_true", help="Show the repair plan without writing files.")
+    desktop_repair.add_argument("--autostart", action="store_true", help="Enable the user service after repairing. Disabled by default.")
+    desktop_repair.add_argument("--json", action="store_true", help="Print machine-readable action JSON.")
+
+    desktop_logs = desktop_sub.add_parser("logs", help="Show desktop integration log locations and recent entries")
+    desktop_logs.add_argument("--lines", type=int, default=40, help="Recent lines to print from each log file.")
+    desktop_logs.add_argument("--json", action="store_true", help="Print machine-readable logs JSON.")
+
+    desktop_open = desktop_sub.add_parser("open", help="Open the local web UI from desktop integration")
+    add_host_port(desktop_open)
+    desktop_open.add_argument("--no-start", action="store_true", help="Do not start the backend before opening the browser.")
+    desktop_open.add_argument("--json", action="store_true", help="Print machine-readable action JSON.")
 
     ask = sub.add_parser("ask", help="Route a request through the showcase runtime")
     ask.add_argument("text")
@@ -103,6 +172,68 @@ def main() -> int:
         config.shell_policy.timeout_seconds = max(1, args.tool_timeout)
     service = ShowcaseService(config)
 
+    if args.command == "status":
+        data = system_status(config, host=args.host, port=args.port)
+        if args.json:
+            print(json.dumps(data, indent=2, sort_keys=True))
+        else:
+            _print_system_status(data)
+        return 0
+
+    if args.command == "open":
+        result = open_local_ui(config, host=args.host, port=args.port, start_if_needed=not args.no_start)
+        _print_action(result.to_dict(), json_output=args.json)
+        return 0 if result.ok else 1
+
+    if args.command == "start":
+        result = start_backend(config, host=args.host, port=args.port)
+        _print_action(result.to_dict(), json_output=args.json)
+        return 0 if result.ok else 1
+
+    if args.command == "stop":
+        result = stop_backend(config, host=args.host, port=args.port)
+        _print_action(result.to_dict(), json_output=args.json)
+        return 0 if result.ok else 1
+
+    if args.command == "restart":
+        result = restart_backend(config, host=args.host, port=args.port)
+        _print_action(result.to_dict(), json_output=args.json)
+        return 0 if result.ok else 1
+
+    if args.command == "logs":
+        data = recent_logs(config, lines=args.lines)
+        _print_logs(data, json_output=args.json)
+        return 0
+
+    if args.command == "desktop":
+        if args.desktop_command == "status":
+            data = desktop_status(config).to_dict()
+            if args.json:
+                print(json.dumps(data, indent=2, sort_keys=True))
+            else:
+                _print_desktop_status(data)
+            return 0
+        if args.desktop_command == "install":
+            result = install_desktop(config, dry_run=args.dry_run, autostart=args.autostart)
+            _print_action(result.to_dict(), json_output=args.json)
+            return 0 if result.ok else 1
+        if args.desktop_command == "uninstall":
+            result = uninstall_desktop(config, dry_run=args.dry_run)
+            _print_action(result.to_dict(), json_output=args.json)
+            return 0 if result.ok else 1
+        if args.desktop_command == "repair":
+            result = repair_desktop(config, dry_run=args.dry_run, autostart=args.autostart)
+            _print_action(result.to_dict(), json_output=args.json)
+            return 0 if result.ok else 1
+        if args.desktop_command == "logs":
+            data = recent_logs(config, lines=args.lines)
+            _print_logs(data, json_output=args.json)
+            return 0
+        if args.desktop_command == "open":
+            result = open_local_ui(config, host=args.host, port=args.port, start_if_needed=not args.no_start)
+            _print_action(result.to_dict(), json_output=args.json)
+            return 0 if result.ok else 1
+
     if args.command == "ask":
         result = service.handle(args.text, confirm=args.confirm)
         model_route = (result.data or {}).get("model_route", {}) if result.data else {}
@@ -167,6 +298,68 @@ def main() -> int:
         )
 
     return 2
+
+
+def _print_system_status(data: dict) -> None:
+    backend = data.get("backend", {})
+    ollama = data.get("ollama", {})
+    desktop = data.get("desktop", {})
+    service = data.get("service", {})
+    launcher = data.get("launcher", {})
+    platform = data.get("platform", {})
+    logs = data.get("logs", {})
+    print(f"Backend: {'running' if backend.get('running') else 'stopped'} ({data.get('local_url')})")
+    print(f"Configured port: {data.get('configured_port')}")
+    print(f"Ollama: {ollama.get('state', 'unknown')} ({ollama.get('endpoint', 'not configured')})")
+    print(f"Desktop integration: {desktop.get('state', 'unknown')} on {desktop.get('platform', 'unknown')}")
+    print(f"Service: installed={service.get('installed')} running={service.get('running')} autostart={service.get('autostart_enabled')}")
+    print(f"Launcher: installed={launcher.get('installed')} path={launcher.get('path')}")
+    print(f"Platform: {platform.get('system')} {platform.get('release')} {platform.get('machine')}")
+    print(f"Logs: {logs.get('logs_dir')}")
+    for note in desktop.get("notes", []):
+        print(f"Note: {note}")
+
+
+def _print_desktop_status(data: dict) -> None:
+    print(f"Desktop integration: {data.get('state', 'unknown')} ({data.get('platform', 'unknown')})")
+    print(f"Supported: {data.get('supported')}")
+    print(f"Launcher: installed={data.get('launcher_installed')} path={data.get('launcher_path')}")
+    print(f"Service: installed={data.get('service_installed')} running={data.get('service_running')} autostart={data.get('autostart_enabled')}")
+    print(f"Future add-ons: tray={data.get('tray_installed')} file_actions={data.get('file_actions_installed')} protocol_handler={data.get('protocol_handler_installed')}")
+    print(f"Local URL: {data.get('local_url')}")
+    print(f"Logs: {data.get('logs_path')}")
+    for note in data.get("notes", []):
+        print(f"Note: {note}")
+
+
+def _print_action(data: dict, *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps(data, indent=2, sort_keys=True))
+        return
+    print(f"{data.get('action', 'action')}: {'ok' if data.get('ok') else 'failed'}")
+    if data.get("dry_run"):
+        print("Dry run: no files were changed.")
+    for path in data.get("changed", []):
+        print(f"Changed: {path}")
+    for path in data.get("skipped", []):
+        print(f"Skipped: {path}")
+    for note in data.get("notes", []):
+        print(f"Note: {note}")
+    if data.get("plan"):
+        print("Plan:")
+        for item in data.get("plan", []):
+            print(f"- {item.get('action')} {item.get('path') or ''} sudo={item.get('requires_sudo')}")
+
+
+def _print_logs(data: dict, *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps(data, indent=2, sort_keys=True))
+        return
+    print(f"Logs path: {data.get('logs_path')}")
+    for name, item in (data.get("logs") or {}).items():
+        print(f"{name}: {item.get('path')} ({'exists' if item.get('exists') else 'missing'})")
+        for line in item.get("lines", []):
+            print(line)
 
 
 if __name__ == "__main__":

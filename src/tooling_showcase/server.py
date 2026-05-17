@@ -16,6 +16,8 @@ import os
 
 from tooling_showcase.benchmarking import benchmark_profiles, default_benchmark_path, load_benchmark_results
 from tooling_showcase.catalog import tool_stability
+from tooling_showcase.desktop import desktop_status
+from tooling_showcase.desktop.manager import local_url as managed_local_url, ollama_status as managed_ollama_status, recent_logs as managed_recent_logs
 from tooling_showcase.models import ActionResult
 from tooling_showcase.research import ResearchLab
 from tooling_showcase.service import ShowcaseService
@@ -66,7 +68,12 @@ def run_server(
                 "/api/adapters",
                 "/api/tools",
                 "/api/models",
+                "/api/models/status",
                 "/api/runtime",
+                "/api/system/status",
+                "/api/system/health",
+                "/api/desktop/status",
+                "/api/ollama/status",
                 "/api/research",
                 "/api/research/list",
                 "/api/journal/clear",
@@ -103,6 +110,38 @@ def run_server(
 
             if clean_path == "/api/models":
                 self._send_json(_load_ollama_models(service))
+                return
+
+            if clean_path == "/api/models/status":
+                models = _load_ollama_models(service)
+                self._send_json({"ok": bool(models.get("ok")), "models": models})
+                return
+
+            if clean_path == "/api/ollama/status":
+                self._send_json(managed_ollama_status(service.config))
+                return
+
+            if clean_path == "/api/desktop/status":
+                self._send_json({"ok": True, "desktop": desktop_status(service.config).to_dict()})
+                return
+
+            if clean_path == "/api/system/health":
+                self._send_json({"ok": True, "service": "tooling-showcase", "local_url": managed_local_url(host=host, port=port), "created_at": datetime.now(timezone.utc).isoformat()})
+                return
+
+            if clean_path == "/api/system/status":
+                events = service.recent_events(limit=100)
+                runtime = _runtime_info(service, events, host=host, manual_tool_api_enabled=manual_tool_api_enabled)
+                self._send_json(
+                    {
+                        "ok": True,
+                        "local_url": managed_local_url(host=host, port=port),
+                        "runtime": runtime,
+                        "desktop": desktop_status(service.config).to_dict(),
+                        "ollama": managed_ollama_status(service.config),
+                        "logs": managed_recent_logs(service.config, lines=10),
+                    }
+                )
                 return
 
             if clean_path == "/api/runtime":

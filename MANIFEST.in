@@ -12,6 +12,7 @@ include start-servers.sh
 recursive-include docs *
 recursive-include examples *
 recursive-include scripts *
+recursive-include src/tooling_showcase/desktop/assets *
 recursive-include src/tooling_showcase/static *
 recursive-include tests *.py
 prune state

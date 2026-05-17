@@ -50,6 +50,8 @@ const state = {
   journal: [],
   journalStats: {},
   runtime: null,
+  desktop: null,
+  desktopError: "",
   modelsOk: null,
   modelsError: "",
   modelsErrorType: "",
@@ -696,6 +698,7 @@ function renderAll() {
   renderChat();
   renderRuntimeStatus();
   renderRuntimePaths();
+  renderDesktopSettings();
   renderHelp();
   renderSidebarSessions();
   updatePageChrome();
@@ -890,6 +893,65 @@ async function loadRuntime() {
   } finally {
     renderRuntimeStatus();
     renderRuntimePaths();
+  }
+}
+
+function desktopStateLabel(desktop) {
+  if (!desktop) return "checking";
+  if (desktop.supported === false) return "unsupported";
+  if (desktop.state) return desktop.state.replaceAll("_", " ");
+  return desktop.installed ? "installed" : "not installed";
+}
+
+function renderDesktopSettings() {
+  const summary = $("desktopStatusSummary");
+  const details = $("desktopStatusDetails");
+  if (!summary || !details) return;
+  const desktop = state.desktop || null;
+  if (state.desktopError) {
+    summary.innerHTML = `<div><span>Status</span><strong class="bad-text">unavailable</strong></div>`;
+    details.innerHTML = `<p class="field-help bad-text">${escapeHtml(state.desktopError)}</p>`;
+    return;
+  }
+  if (!desktop) {
+    summary.innerHTML = `<div><span>Status</span><strong>checking</strong></div>`;
+    details.innerHTML = `<p class="field-help">Checking desktop integration status...</p>`;
+    return;
+  }
+
+  summary.innerHTML = `
+    <div><span>Integration</span><strong>${escapeHtml(desktopStateLabel(desktop))}</strong></div>
+    <div><span>Launcher</span><strong>${desktop.launcher_installed ? "installed" : "missing"}</strong></div>
+    <div><span>Service</span><strong>${desktop.service_running ? "running" : desktop.service_installed ? "installed" : "missing"}</strong></div>
+    <div><span>Platform</span><strong>${escapeHtml(desktop.platform || "unknown")}</strong></div>`;
+
+  const notes = Array.isArray(desktop.notes) ? desktop.notes : [];
+  details.innerHTML = `
+    ${detailTable([
+      ["Local URL", desktop.local_url],
+      ["Launcher", desktop.launcher_path || "not installed"],
+      ["Service", desktop.service_path || "not installed"],
+      ["Autostart", desktop.autostart_enabled ? "enabled" : "disabled"],
+      ["Logs", desktop.logs_path || "not configured"],
+      ["Tray", desktop.tray_installed ? "installed" : "not installed"],
+      ["File actions", desktop.file_actions_installed ? "installed" : "not installed"],
+      ["Protocol handler", desktop.protocol_handler_installed ? "installed" : "not installed"]
+    ])}
+    <div class="desktop-note-list">${notes.map((note) => `<p class="field-help">${escapeHtml(note)}</p>`).join("")}</div>`;
+}
+
+async function loadDesktopStatus() {
+  try {
+    const res = await fetch("/api/desktop/status");
+    if (!res.ok) throw new Error(`/api/desktop/status returned HTTP ${res.status}`);
+    const data = await res.json();
+    state.desktop = data.desktop || data;
+    state.desktopError = "";
+  } catch (error) {
+    state.desktop = null;
+    state.desktopError = error.message;
+  } finally {
+    renderDesktopSettings();
   }
 }
 
@@ -1874,7 +1936,7 @@ function refreshVisibleData() {
   resumeRefreshTimer = setTimeout(() => {
     resumeRefreshTimer = null;
     if (document.hidden) return;
-    void Promise.allSettled([loadModels(), loadTools(), loadJournal(), loadRuntime()]);
+    void Promise.allSettled([loadModels(), loadTools(), loadJournal(), loadRuntime(), loadDesktopStatus()]);
   }, 150);
 }
 
@@ -4288,7 +4350,7 @@ async function boot() {
   loadLocalState();
   bindEvents();
   renderAll();
-  await Promise.allSettled([loadModels(), loadTools(), loadJournal(), loadRuntime()]);
+  await Promise.allSettled([loadModels(), loadTools(), loadJournal(), loadRuntime(), loadDesktopStatus()]);
   renderAll();
   appBooted = true;
 }

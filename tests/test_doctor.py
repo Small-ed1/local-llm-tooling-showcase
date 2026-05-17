@@ -43,7 +43,7 @@ def test_doctor_json_output_is_machine_readable(tmp_path: Path, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert status == 0
     assert payload["ok"] is True
-    assert payload["version"] == "1.0.0"
+    assert payload["version"] == "1.1.0"
 
 
 def test_doctor_suggests_dev_extra_when_ruff_is_missing(tmp_path: Path, monkeypatch):
